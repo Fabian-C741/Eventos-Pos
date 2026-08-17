@@ -1,0 +1,22 @@
+# Dependencias
+node_modules/
+
+# Builds y empaquetado
+dist/
+
+# Datos locales del sistema (nunca subir: contiene la base de datos real)
+data/
+backups/
+logs/
+
+# Secretos y entorno
+.env
+.env.*
+!.env.example
+
+# Sistema operativo y editores
+.DS_Store
+Thumbs.db
+*.log
+.idea/
+.vscode/

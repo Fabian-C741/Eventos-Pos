@@ -1,0 +1,12 @@
+{
+  "name": "Eventos POS",
+  "short_name": "Eventos POS",
+  "description": "Sistema de gestión de eventos, ventas y recaudación",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "lang": "es",
+  "icons": []
+}

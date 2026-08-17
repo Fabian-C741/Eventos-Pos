@@ -1,0 +1,39 @@
+{
+  "name": "eventos-pos",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Sistema profesional de gestión de eventos, ventas y recaudación",
+  "type": "module",
+  "scripts": {
+    "dev:server": "tsx watch src/server/index.ts",
+    "dev:ui": "vite",
+    "dev": "node scripts/dev.js",
+    "build": "npm run build:ui && npm run build:server",
+    "build:ui": "vite build",
+    "build:server": "esbuild src/server/index.ts --bundle --platform=node --format=cjs --target=node22 --outfile=dist/app.cjs --external:express --external:jsdom --external:canvas && node -e \"require('fs').copyFileSync('src/server/db/schema.sql','dist/schema.sql')\"",
+    "start": "node dist/app.cjs",
+    "test": "tsx --test tests/*.test.ts",
+    "pack": "powershell -ExecutionPolicy Bypass -File scripts/pack.ps1"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "jspdf": "^2.5.2",
+    "jspdf-autotable": "^3.8.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.28.0",
+    "recharts": "^2.13.3",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.10.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "esbuild": "^0.24.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vite": "^5.4.11"
+  }
+}

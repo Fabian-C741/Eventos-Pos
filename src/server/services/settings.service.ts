@@ -1,0 +1,94 @@
+import { BadRequest } from '../errors';
+import { allRows, exec, getRow } from '../db/db';
+import { audit } from './audit.service';
+import type { AppSettings } from '../../shared/types';
+
+const DEFAULT_SETTINGS: Record<string, string> = {
+  app_name: 'Eventos POS',
+  sound_enabled: '1',
+  auto_backup: '1',
+  device_name: 'Caja central',
+};
+
+export function getSetting(key: string): string {
+  const row = getRow<{ value: string }>('SELECT value FROM settings WHERE key = ?', key);
+  if (row) return row.value;
+  const def = DEFAULT_SETTINGS[key];
+  if (def !== undefined) {
+    exec('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', key, def);
+    return def;
+  }
+  return '';
+}
+
+export function getSettings(): AppSettings {
+  return {
+    app_name: getSetting('app_name'),
+    sound_enabled: getSetting('sound_enabled'),
+    auto_backup: getSetting('auto_backup'),
+    device_name: getSetting('device_name'),
+  };
+}
+
+export function setSetting(key: string, value: string, userId: number) {
+  const allowed = Object.keys(DEFAULT_SETTINGS);
+  if (!allowed.includes(key)) throw BadRequest('Configuración no válida');
+  exec('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', key, String(value).slice(0, 200));
+  audit(userId, 'update', 'settings', null, { key });
+  return true;
+}
+
+export function listAppLogs(filters: { level?: string; from?: string; to?: string; module?: string; limit?: number }): unknown[] {
+  const where: string[] = [];
+  const params: unknown[] = [];
+  if (filters.level) {
+    where.push('level = ?');
+    params.push(filters.level);
+  }
+  if (filters.module) {
+    where.push('module LIKE ?');
+    params.push('%' + filters.module + '%');
+  }
+  if (filters.from) {
+    where.push('created_at >= ?');
+    params.push(filters.from + ' 00:00:00');
+  }
+  if (filters.to) {
+    where.push('created_at <= ?');
+    params.push(filters.to + ' 23:59:59');
+  }
+  const whereSql = where.length ? 'WHERE ' + where.join(' AND ') : '';
+  const limit = Math.min(filters.limit ?? 200, 1000);
+  return allRows(
+    `SELECT id, level, module, message, details, user_id, device, created_at
+     FROM app_logs ${whereSql} ORDER BY id DESC LIMIT ?`,
+    ...params,
+    limit,
+  );
+}
+
+export function listAudit(filters: { user_id?: number; from?: string; to?: string; limit?: number }): unknown[] {
+  const where: string[] = [];
+  const params: unknown[] = [];
+  if (filters.user_id) {
+    where.push('user_id = ?');
+    params.push(filters.user_id);
+  }
+  if (filters.from) {
+    where.push('created_at >= ?');
+    params.push(filters.from + ' 00:00:00');
+  }
+  if (filters.to) {
+    where.push('created_at <= ?');
+    params.push(filters.to + ' 23:59:59');
+  }
+  const whereSql = where.length ? 'WHERE ' + where.join(' AND ') : '';
+  const limit = Math.min(filters.limit ?? 200, 1000);
+  return allRows(
+    `SELECT a.id, a.user_id, u.name AS user_name, a.action, a.entity, a.entity_id, a.details, a.created_at
+     FROM audit_log a LEFT JOIN users u ON u.id = a.user_id
+     ${whereSql} ORDER BY a.id DESC LIMIT ?`,
+    ...params,
+    limit,
+  );
+}
