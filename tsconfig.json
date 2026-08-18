@@ -14,9 +14,8 @@
     "isolatedModules": true,
     "noEmit": true,
     "types": ["node"],
-    "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["./src/*"]
     }
   },
   "include": ["src", "api", "tests", "vite.config.ts", "scripts"]
