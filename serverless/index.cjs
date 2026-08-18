@@ -2865,10 +2865,23 @@ var db2 = (init_db(), __toCommonJS(db_exports));
 var appModule = (init_app(), __toCommonJS(app_exports));
 var initPromise = null;
 var app = null;
+function log(step, detail) {
+  console.log("[diag] " + step + " " + (detail || ""));
+}
 async function handleDiag(res) {
   const out = { ok: false, timestamp: (/* @__PURE__ */ new Date()).toISOString() };
+  const finish = () => {
+    try {
+      res.statusCode = out.ok ? 200 : 500;
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify(out, null, 2));
+    } catch (e) {
+      log("finish-error", e && e.message || String(e));
+    }
+  };
   try {
     out.db_url_set = !!process.env.DATABASE_URL;
+    log("step1", "url_set=" + out.db_url_set);
     if (process.env.DATABASE_URL) {
       const m = process.env.DATABASE_URL.match(/^[^:]+:\/\/[^:]+:([^@]*)@([^:]+):(\d+)\/([^?]+)/);
       out.db_host = m ? m[2] : "formato-invalido";
@@ -2877,23 +2890,42 @@ async function handleDiag(res) {
       out.db_password_set = !!m?.[1];
       out.db_url_invalid = !m;
     }
-    out.tz = process.env.TZ || null;
+    log("step2", "initDb");
     await db2.initDb({});
-    const rows = await db2.getDb().unsafe("SELECT 1 AS one");
+    log("step3", "initDb ok");
+    const s = db2.getDb();
+    if (s && typeof s.on === "function") {
+      s.on("error", (e) => log("db-error", e && e.message || String(e)));
+    }
+    log("step4", "select 1");
+    const rows = await Promise.race([
+      Promise.resolve(s.unsafe("SELECT 1 AS one")),
+      new Promise((_, rej) => setTimeout(() => rej(new Error("TIMEOUT select 1")), 8e3))
+    ]);
+    log("step5", "select1=" + String(rows[0]?.one));
     out.select_1 = rows[0]?.one;
     out.ok = true;
   } catch (e) {
+    log("error", e && e.message || String(e));
     out.error = e && e.message || String(e);
     out.stack = e && e.stack ? e.stack.split("\n").slice(0, 8).join(" | ") : "";
   }
-  res.statusCode = out.ok ? 200 : 500;
-  res.setHeader("content-type", "application/json");
-  res.end(JSON.stringify(out, null, 2));
+  finish();
 }
 async function handler(req, res) {
   const path6 = (req.url || "").split("?")[0];
   if (path6 === "/api/diag" || path6 === "/api/diag/") {
-    await handleDiag(res);
+    try {
+      await handleDiag(res);
+    } catch (e) {
+      log("handler-error", e && e.message || String(e));
+      try {
+        res.statusCode = 500;
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify({ error: e && e.message || "Error", code: "DIAG_ERROR" }));
+      } catch (e2) {
+      }
+    }
     return;
   }
   if (!initPromise) {
