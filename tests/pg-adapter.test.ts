@@ -6,7 +6,7 @@ process.env.DATABASE_URL = 'postgres://u:p@localhost:5432/db';
 process.env.EVENTOS_TZ = 'America/Argentina/Buenos_Aires';
 
 function makeFakePg() {
-  const tables = new Map<string, { cols: string[]; rows: Record<string, unknown>[]; nextId: number }>();
+  const tables = new Map<string, { cols: string[]; rows: Record<string, unknown>[]; nextId: number; hasId: boolean }>();
   const fakeSql = {
     async unsafe(query: string, params: unknown[] = []) {
       const q = query.trim();
@@ -14,12 +14,15 @@ function makeFakePg() {
       if (q.startsWith('CREATE')) {
         const m = q.match(/CREATE TABLE (\w+) \(([\s\S]*)\)/);
         const name = m![1];
-        const cols = m![2]
-          .split(',')
-          .map((c: string) => c.trim().split(/\s+/)[0])
-          .filter((c: string) => c !== 'id');
-        tables.set(name, { cols, rows: [], nextId: 1 });
+        const decls = m![2].split(',').map((c: string) => c.trim());
+        const hasId = decls.some((c: string) => c.split(/\s+/)[0] === 'id');
+        const cols = decls.map((c: string) => c.split(/\s+/)[0]).filter((c: string) => c !== 'id');
+        tables.set(name, { cols, rows: [], nextId: 1, hasId });
         return [];
+      }
+      if (/information_schema/.test(q)) {
+        const t = tables.get(String(params[0]));
+        return [{ has: !!t && t.hasId }];
       }
       const insert = q.match(/INSERT INTO (\w+)\s*\(([^)]+)\)\s*VALUES\s*\(([^)]+)\)\s*(RETURNING (\w+))?/i);
       if (insert) {

@@ -192,16 +192,34 @@ export async function allRows<T>(sqlText: string, ...params: unknown[]): Promise
   return rows.map((r) => normalizeRow<T>(r));
 }
 
+const idTables = new Set<string>();
+
+async function tableHasId(table: string): Promise<boolean> {
+  if (idTables.has(table)) return true;
+  const s = getSql();
+  const rows = await s.unsafe<{ has: boolean }[]>(
+    `SELECT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = $1 AND column_name = 'id') AS has`,
+    [table],
+  );
+  const has = !!rows[0]?.has;
+  if (has) idTables.add(table);
+  return has;
+}
+
 export async function exec(sqlText: string, ...params: unknown[]) {
   return runLocked(async () => {
     const s = getSql();
     let query = translateSql(sqlText);
     const isInsert = /^\s*INSERT/i.test(query);
     if (isInsert && !/RETURNING/i.test(query)) {
-      query += ' RETURNING id';
+      const m = query.match(/^\s*INSERT\s+INTO\s+([\w."]+)/i);
+      const table = m?.[1]?.replace(/["']/g, '');
+      if (table && (await tableHasId(table))) {
+        query += ' RETURNING id';
+      }
     }
     const rows = await s.unsafe<Record<string, unknown>[]>(query, params as never[]);
-    if (isInsert && rows.length > 0) {
+    if (isInsert && rows.length > 0 && 'id' in rows[0]) {
       return { changes: rows.length, lastInsertRowid: Number(rows[0].id) };
     }
     return { changes: rows.length, lastInsertRowid: 0 };

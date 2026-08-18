@@ -429,16 +429,31 @@ async function allRows2(sqlText, ...params) {
   });
   return rows.map((r) => normalizeRow(r));
 }
+async function tableHasId(table) {
+  if (idTables.has(table)) return true;
+  const s = getSql();
+  const rows = await s.unsafe(
+    `SELECT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = $1 AND column_name = 'id') AS has`,
+    [table]
+  );
+  const has = !!rows[0]?.has;
+  if (has) idTables.add(table);
+  return has;
+}
 async function exec2(sqlText, ...params) {
   return runLocked(async () => {
     const s = getSql();
     let query = translateSql(sqlText);
     const isInsert = /^\s*INSERT/i.test(query);
     if (isInsert && !/RETURNING/i.test(query)) {
-      query += " RETURNING id";
+      const m = query.match(/^\s*INSERT\s+INTO\s+([\w."]+)/i);
+      const table = m?.[1]?.replace(/["']/g, "");
+      if (table && await tableHasId(table)) {
+        query += " RETURNING id";
+      }
     }
     const rows = await s.unsafe(query, params);
-    if (isInsert && rows.length > 0) {
+    if (isInsert && rows.length > 0 && "id" in rows[0]) {
       return { changes: rows.length, lastInsertRowid: Number(rows[0].id) };
     }
     return { changes: rows.length, lastInsertRowid: 0 };
@@ -458,7 +473,7 @@ async function insertAppLog2(level, module2, message, details, userId, device) {
   } catch {
   }
 }
-var import_postgres, TZ, OID_BIGINT, OID_NUMERIC, sql, postgresFactory, chain, inTx;
+var import_postgres, TZ, OID_BIGINT, OID_NUMERIC, sql, postgresFactory, chain, inTx, idTables;
 var init_pg = __esm({
   "src/server/db/pg.ts"() {
     "use strict";
@@ -472,6 +487,7 @@ var init_pg = __esm({
     postgresFactory = import_postgres.default;
     chain = Promise.resolve();
     inTx = false;
+    idTables = /* @__PURE__ */ new Set();
   }
 });
 
