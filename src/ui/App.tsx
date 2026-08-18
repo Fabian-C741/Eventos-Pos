@@ -3,6 +3,7 @@ import { useAuth } from './context/AuthContext';
 import { AppShell } from './components/layout/AppShell';
 import { Spinner } from './components/common/ui';
 import { SuperadminLogin, AdminLogin, CajeroLogin } from './screens/Login/LoginScreen';
+import { NotFoundScreen } from './screens/NotFound/NotFoundScreen';
 import { PosScreen } from './screens/Pos/PosScreen';
 import { DashboardScreen } from './screens/Dashboard/DashboardScreen';
 import { EventsScreen } from './screens/Events/EventsScreen';
@@ -156,7 +157,7 @@ export function App() {
           </SuperadminRoute>
         }
       />
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route path="*" element={<NotFoundScreen />} />
     </Routes>
   );
 }
