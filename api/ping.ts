@@ -1,5 +1,6 @@
-export default function handler(_req: { url?: string }, res: { statusCode: number; setHeader: (k: string, v: string) => void; end: (b: string) => void }) {
+// @ts-nocheck
+module.exports = function handler(_req, res) {
   res.statusCode = 200;
   res.setHeader('content-type', 'application/json');
   res.end(JSON.stringify({ ok: true, at: new Date().toISOString() }));
-}
+};
