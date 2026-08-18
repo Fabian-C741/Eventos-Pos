@@ -271,6 +271,7 @@ __export(pg_exports, {
   nextSeq: () => nextSeq2,
   reopenDb: () => reopenDb2,
   runInTransaction: () => runInTransaction2,
+  sanitizePgUrl: () => sanitizePgUrl,
   translateSql: () => translateSql
 });
 function _setPostgresFactoryForTest(fn) {
@@ -321,9 +322,24 @@ function getSql() {
   if (!sql) throw new Error("Base de datos no inicializada");
   return sql;
 }
+function sanitizePgUrl(rawUrl) {
+  const url = String(rawUrl || "").replace(/^[\uFEFF\u00A0]+/, "").trim();
+  try {
+    new URL(url);
+    return url;
+  } catch {
+    const m = url.match(/^([^:]+:\/\/[^:]+:)([^@]*)@(.*)$/);
+    if (m) {
+      const encoded = m[2].replace(/%/g, "%25").replace(/[^A-Za-z0-9\-._~]/g, (c) => encodeURIComponent(c));
+      return `${m[1]}${encoded}@${m[3]}`;
+    }
+    throw new Error("DATABASE_URL inv\xE1lida");
+  }
+}
 async function initDb2(_config = {}) {
-  const url = process.env.DATABASE_URL;
-  if (!url) throw new Error("DATABASE_URL no definida para el modo nube");
+  const rawUrl = process.env.DATABASE_URL;
+  if (!rawUrl) throw new Error("DATABASE_URL no definida para el modo nube");
+  const url = sanitizePgUrl(rawUrl);
   sql = postgresFactory(url, {
     max: 1,
     ssl: { rejectUnauthorized: false },
@@ -2860,7 +2876,7 @@ var init_app = __esm({
   }
 });
 
-// api/index.ts
+// serverless/entry.ts
 var db2 = (init_db(), __toCommonJS(db_exports));
 var appModule = (init_app(), __toCommonJS(app_exports));
 var initPromise = null;
@@ -2880,15 +2896,32 @@ async function handleDiag(res) {
     }
   };
   try {
-    out.db_url_set = !!process.env.DATABASE_URL;
-    log("step1", "url_set=" + out.db_url_set);
-    if (process.env.DATABASE_URL) {
-      const m = process.env.DATABASE_URL.match(/^[^:]+:\/\/[^:]+:([^@]*)@([^:]+):(\d+)\/([^?]+)/);
+    const url = process.env.DATABASE_URL || "";
+    out.db_url_set = !!url;
+    out.db_url_len = url.length;
+    out.db_url_tail = url.slice(-12);
+    log("step1", "url_set=" + out.db_url_set + " len=" + url.length);
+    if (url) {
+      try {
+        const u = new URL(url);
+        out.url_parse = "ok:" + u.hostname + ":" + u.port;
+      } catch (e) {
+        out.url_parse = "FAIL:" + (e && e.message || String(e));
+      }
+      const m = url.match(/^[^:]+:\/\/[^:]+:([^@]*)@([^:]+):(\d+)\/([^?]+)/);
       out.db_host = m ? m[2] : "formato-invalido";
       out.db_port = m ? m[3] : null;
       out.db_name = m ? m[4] : null;
       out.db_password_set = !!m?.[1];
       out.db_url_invalid = !m;
+      const pwd = m && m[1] || "";
+      out.db_url_masked = url.replace(/:[^@]*@/, ":***@");
+      out.pwd_len = pwd.length;
+      out.pwd_has_hash = pwd.includes("#");
+      out.pwd_has_pct23 = pwd.includes("%23");
+      out.pwd_has_bracket = /[\[\]]/.test(pwd);
+      out.pwd_has_space = /\s/.test(pwd);
+      out.pwd_mask = pwd.slice(0, 3) + "..." + pwd.slice(-2);
     }
     log("step2", "initDb");
     await db2.initDb({});

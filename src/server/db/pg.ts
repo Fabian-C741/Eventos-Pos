@@ -71,9 +71,25 @@ function getSql() {
   return sql;
 }
 
+export function sanitizePgUrl(rawUrl: string): string {
+  const url = String(rawUrl || '').replace(/^[\uFEFF\u00A0]+/, '').trim();
+  try {
+    new URL(url);
+    return url;
+  } catch {
+    const m = url.match(/^([^:]+:\/\/[^:]+:)([^@]*)@(.*)$/);
+    if (m) {
+      const encoded = m[2].replace(/%/g, '%25').replace(/[^A-Za-z0-9\-._~]/g, (c) => encodeURIComponent(c));
+      return `${m[1]}${encoded}@${m[3]}`;
+    }
+    throw new Error('DATABASE_URL inválida');
+  }
+}
+
 export async function initDb(_config: DbConfig = {}) {
-  const url = process.env.DATABASE_URL;
-  if (!url) throw new Error('DATABASE_URL no definida para el modo nube');
+  const rawUrl = process.env.DATABASE_URL;
+  if (!rawUrl) throw new Error('DATABASE_URL no definida para el modo nube');
+  const url = sanitizePgUrl(rawUrl);
   sql = postgresFactory(url, {
     max: 1,
     ssl: { rejectUnauthorized: false },
