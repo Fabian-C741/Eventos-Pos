@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { requireAuth, requireRole, AuthedRequest } from '../auth';
+import { requireAuth, requireRole, AuthedRequest, asyncHandler } from '../auth';
 import { dashboard, stats } from '../services/dashboard.service';
 import { getReport } from '../services/reports.service';
 import { parseOptionalInt } from './helpers';
@@ -7,7 +7,7 @@ import { parseOptionalInt } from './helpers';
 const router = Router();
 router.use(requireAuth);
 
-router.get('/dashboard', async (req: AuthedRequest, res) => {
+router.get('/dashboard', asyncHandler(async (req: AuthedRequest, res) => {
   const q = req.query as Record<string, string>;
   res.json(
     await dashboard(
@@ -16,9 +16,9 @@ router.get('/dashboard', async (req: AuthedRequest, res) => {
       q.to,
     ),
   );
-});
+}));
 
-router.get('/stats', async (req: AuthedRequest, res) => {
+router.get('/stats', asyncHandler(async (req: AuthedRequest, res) => {
   const q = req.query as Record<string, string>;
   res.json(
     await stats(
@@ -27,7 +27,7 @@ router.get('/stats', async (req: AuthedRequest, res) => {
       q.to,
     ),
   );
-});
+}));
 
 router.get('/reports/:type', async (req: AuthedRequest, res, next) => {
   try {

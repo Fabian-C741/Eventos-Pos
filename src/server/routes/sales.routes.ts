@@ -1,6 +1,6 @@
 import { BadRequest } from '../errors';
 import { Router } from 'express';
-import { requireAuth, requireRole, AuthedRequest } from '../auth';
+import { requireAuth, requireRole, AuthedRequest, asyncHandler } from '../auth';
 import { createSale, listSales, getSaleDetail, voidSale, lastSalesForBox, getOperationNumber } from '../services/sales.service';
 import { getBox } from '../services/boxes.service';
 import { getEvent } from '../services/events.service';
@@ -44,7 +44,7 @@ router.post('/', async (req: AuthedRequest, res, next) => {
   }
 });
 
-router.get('/', async (req: AuthedRequest, res) => {
+router.get('/', asyncHandler(async (req: AuthedRequest, res) => {
   const q = req.query as Record<string, string>;
   const sales = await listSales({
     event_id: parseOptionalInt(q.event_id),
@@ -58,7 +58,7 @@ router.get('/', async (req: AuthedRequest, res) => {
     offset: parseOptionalInt(q.offset) ?? 0,
   });
   res.json(sales);
-});
+}));
 
 router.get('/operation', async (req: AuthedRequest, res, next) => {
   try {

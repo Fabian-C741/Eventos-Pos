@@ -9,15 +9,15 @@ import {
 } from '../services/auth.service';
 import { sanitizeInput } from '../security';
 import { audit } from '../services/audit.service';
-import { requireAuth, attachDevice, AuthedRequest } from '../auth';
+import { requireAuth, attachDevice, AuthedRequest, asyncHandler } from '../auth';
 import { logger } from '../logger';
 import { initSequenceCounters } from '../services/auth.service';
 
 const router = Router();
 
-router.get('/status', async (_req, res) => {
+router.get('/status', asyncHandler(async (_req, res) => {
   res.json({ setup: await needsSetup() });
-});
+}));
 
 router.post('/setup', async (req, res, next) => {
   try {
@@ -67,11 +67,11 @@ router.post('/login/pin', async (req, res, next) => {
   }
 });
 
-router.post('/logout', requireAuth, async (req: AuthedRequest, res) => {
+router.post('/logout', requireAuth, asyncHandler(async (req: AuthedRequest, res) => {
   const token = (req.headers.authorization || '').replace('Bearer ', '');
   await logout(token);
   res.json({ ok: true });
-});
+}));
 
 router.post('/change-password', requireAuth, async (req: AuthedRequest, res, next) => {
   try {
@@ -83,9 +83,9 @@ router.post('/change-password', requireAuth, async (req: AuthedRequest, res, nex
   }
 });
 
-router.post('/init-sequences', requireAuth, async (_req: AuthedRequest, res) => {
+router.post('/init-sequences', requireAuth, asyncHandler(async (_req: AuthedRequest, res) => {
   await initSequenceCounters();
   res.json({ ok: true });
-});
+}));
 
 export default router;

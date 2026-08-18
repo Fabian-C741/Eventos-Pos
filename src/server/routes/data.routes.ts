@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { requireAuth, requireRole, AuthedRequest } from '../auth';
+import { requireAuth, requireRole, AuthedRequest, asyncHandler } from '../auth';
 import * as eventsSvc from '../services/events.service';
 import * as catsSvc from '../services/categories.service';
 import * as prodSvc from '../services/products.service';
@@ -12,9 +12,9 @@ const router = Router();
 router.use(requireAuth);
 
 // ----- Users (superadmin: admins; superadmin/admin: cajeros) -----
-router.get('/users', requireRole('superadmin', 'admin'), async (_req, res) => {
+router.get('/users', requireRole('superadmin', 'admin'), asyncHandler(async (_req, res) => {
   res.json(await usersSvc.listUsers());
-});
+}));
 
 router.post('/users', requireRole('superadmin', 'admin'), async (req: AuthedRequest, res, next) => {
   try {
@@ -51,9 +51,9 @@ router.delete('/users/:id', requireRole('superadmin', 'admin'), async (req: Auth
 });
 
 // ----- Events -----
-router.get('/events', async (_req, res) => {
+router.get('/events', asyncHandler(async (_req, res) => {
   res.json(await eventsSvc.listEvents());
-});
+}));
 
 router.get('/events/:id', async (req, res, next) => {
   try {
@@ -96,9 +96,9 @@ router.delete('/events/:id', requireRole('superadmin', 'admin'), async (req: Aut
 });
 
 // ----- Categories -----
-router.get('/events/:eventId/categories', async (req, res) => {
+router.get('/events/:eventId/categories', asyncHandler(async (req, res) => {
   res.json(await catsSvc.listCategories(parseNumber(req.params.eventId)));
-});
+}));
 
 router.post('/events/:eventId/categories', requireRole('superadmin', 'admin'), async (req: AuthedRequest, res, next) => {
   try {
@@ -126,9 +126,9 @@ router.delete('/categories/:id', requireRole('superadmin', 'admin'), async (req:
 });
 
 // ----- Products -----
-router.get('/events/:eventId/products', async (req, res) => {
+router.get('/events/:eventId/products', asyncHandler(async (req, res) => {
   res.json(await prodSvc.listProducts(parseNumber(req.params.eventId)));
-});
+}));
 
 router.post('/events/:eventId/products', requireRole('superadmin', 'admin'), async (req: AuthedRequest, res, next) => {
   try {
@@ -164,9 +164,9 @@ router.delete('/products/:id', requireRole('superadmin', 'admin'), async (req: A
 });
 
 // ----- Ticket types -----
-router.get('/events/:eventId/tickets', async (req, res) => {
+router.get('/events/:eventId/tickets', asyncHandler(async (req, res) => {
   res.json(await ticketsSvc.listTicketTypes(parseNumber(req.params.eventId)));
-});
+}));
 
 router.post('/events/:eventId/tickets', requireRole('superadmin', 'admin'), async (req: AuthedRequest, res, next) => {
   try {
@@ -193,14 +193,14 @@ router.delete('/tickets/:id', requireRole('superadmin', 'admin'), async (req: Au
   }
 });
 
-router.get('/events/:eventId/tickets/last-numbers', async (req, res) => {
+router.get('/events/:eventId/tickets/last-numbers', asyncHandler(async (req, res) => {
   res.json(await ticketsSvc.lastTicketNumbers(parseNumber(req.params.eventId)));
-});
+}));
 
 // ----- Boxes -----
-router.get('/events/:eventId/boxes', async (req, res) => {
+router.get('/events/:eventId/boxes', asyncHandler(async (req, res) => {
   res.json(await boxesSvc.listBoxes(parseNumber(req.params.eventId)));
-});
+}));
 
 router.post('/events/:eventId/boxes', requireRole('superadmin', 'admin'), async (req: AuthedRequest, res, next) => {
   try {

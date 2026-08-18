@@ -1,6 +1,6 @@
 import { BadRequest } from '../errors';
 import { Router } from 'express';
-import { requireAuth, requireRole, AuthedRequest } from '../auth';
+import { requireAuth, requireRole, AuthedRequest, asyncHandler } from '../auth';
 import {
   openClose,
   currentOpenClose,
@@ -82,7 +82,7 @@ router.post('/:id/close', requireRole('superadmin', 'admin'), async (req: Authed
   }
 });
 
-router.get('/', async (req: AuthedRequest, res) => {
+router.get('/', asyncHandler(async (req: AuthedRequest, res) => {
   const q = req.query as Record<string, string>;
   res.json(
     await listCloses({
@@ -91,6 +91,6 @@ router.get('/', async (req: AuthedRequest, res) => {
       status: q.status,
     }),
   );
-});
+}));
 
 export default router;
