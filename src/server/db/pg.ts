@@ -79,7 +79,7 @@ export async function initDb(_config: DbConfig = {}) {
     ssl: { rejectUnauthorized: false },
     connection: {
       application_name: 'eventos-pos',
-      timezone: TZ,
+      options: `-c timezone=${TZ}`,
     },
     types: {
       bigint: {
