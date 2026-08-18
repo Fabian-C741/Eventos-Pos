@@ -2,7 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
 import { AppShell } from './components/layout/AppShell';
 import { Spinner } from './components/common/ui';
-import { LoginScreen } from './screens/Login/LoginScreen';
+import { SuperadminLogin, AdminLogin, CajeroLogin } from './screens/Login/LoginScreen';
 import { PosScreen } from './screens/Pos/PosScreen';
 import { DashboardScreen } from './screens/Dashboard/DashboardScreen';
 import { EventsScreen } from './screens/Events/EventsScreen';
@@ -21,7 +21,7 @@ import type { ReactNode } from 'react';
 function AdminRoute({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
   if (loading) return <Spinner />;
-  if (!user) return <Navigate to="/login" replace />;
+  if (!user) return <Navigate to="/admin" replace />;
   if (user.role === 'cajero') return <Navigate to="/cajero" replace />;
   return <AppShell>{children}</AppShell>;
 }
@@ -34,20 +34,14 @@ function SuperadminRoute({ children }: { children: ReactNode }) {
   return <AppShell>{children}</AppShell>;
 }
 
-function PosRoute({ children }: { children: ReactNode }) {
-  const { user, loading } = useAuth();
-  if (loading) return <Spinner />;
-  if (!user) return <Navigate to="/login" replace />;
-  return children;
-}
-
 export function App() {
   const { user, loading } = useAuth();
   if (loading) return <Spinner />;
 
   return (
     <Routes>
-      <Route path="/login" element={<LoginScreen />} />
+      <Route path="/login" element={<SuperadminLogin />} />
+      <Route path="/admin" element={<AdminLogin />} />
       <Route
         path="/"
         element={
@@ -64,11 +58,7 @@ export function App() {
       />
       <Route
         path="/cajero"
-        element={
-          <PosRoute>
-            <PosScreen />
-          </PosRoute>
-        }
+        element={user && user.role === 'cajero' ? <PosScreen /> : <CajeroLogin />}
       />
       <Route
         path="/dashboard"
