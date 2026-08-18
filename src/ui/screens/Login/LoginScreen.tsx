@@ -12,7 +12,7 @@ export function LoginScreen() {
   const { push } = useToast();
   const navigate = useNavigate();
 
-  const [mode, setMode] = useState<'cajero' | 'admin'>('cajero');
+  const [mode, setMode] = useState<'superadmin' | 'admin' | 'cajero'>('superadmin');
   const [error, setError] = useState('');
   const [setupError, setSetupError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -56,7 +56,7 @@ export function LoginScreen() {
       await api.post('/auth/setup', setup);
       push('success', 'Sistema configurado. Ingresá ahora.');
       setSetupOpen(false);
-      setMode('admin');
+      setMode('superadmin');
     } catch (e) {
       setSetupError((e as Error).message);
     } finally {
@@ -113,11 +113,14 @@ export function LoginScreen() {
         </div>
 
         <div className="login-tabs">
-          <button className={mode === 'cajero' ? 'active' : ''} onClick={() => { setMode('cajero'); setError(''); setPin(''); setSelected(null); }}>
-            🛒 Cajero
+          <button className={mode === 'superadmin' ? 'active' : ''} onClick={() => { setMode('superadmin'); setError(''); }}>
+            ⭐ Superadmin
           </button>
           <button className={mode === 'admin' ? 'active' : ''} onClick={() => { setMode('admin'); setError(''); }}>
             👤 Admin
+          </button>
+          <button className={mode === 'cajero' ? 'active' : ''} onClick={() => { setMode('cajero'); setError(''); setPin(''); setSelected(null); }}>
+            🛒 Cajero
           </button>
         </div>
 
