@@ -3,7 +3,6 @@
   "version": "1.0.0",
   "private": true,
   "description": "Sistema profesional de gestión de eventos, ventas y recaudación",
-  "type": "module",
   "scripts": {
     "dev:server": "tsx watch src/server/index.ts",
     "dev:ui": "vite",
