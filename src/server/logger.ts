@@ -19,8 +19,12 @@ export class Logger {
 
   constructor(logDir: string) {
     this.logDir = logDir;
-    if (!existsSync(logDir)) mkdirSync(logDir, { recursive: true });
-    this.rotate();
+    try {
+      if (!existsSync(logDir)) mkdirSync(logDir, { recursive: true });
+      this.rotate();
+    } catch {
+      /* noop: FS de solo lectura (serverless) */
+    }
   }
 
   setDbSink(fn: (entry: Omit<LogPayload, 'device'> & { device?: string }) => void) {

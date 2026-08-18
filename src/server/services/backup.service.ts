@@ -1,23 +1,33 @@
 import { BadRequest } from '../errors';
-import { existsSync, mkdirSync, copyFileSync, readdirSync, statSync, unlinkSync, renameSync } from 'fs';
+import { existsSync, mkdirSync, copyFileSync, readdirSync, statSync, unlinkSync } from 'fs';
 import path from 'path';
 import { getDataDir, closeDb, reopenDb, checkpointWal } from '../db/db';
 import { logger } from '../logger';
 import { audit } from './audit.service';
 import type { BackupInfo } from '../../shared/types';
 
+const IS_CLOUD = !!process.env.DATABASE_URL;
+
+function cloudDisabled(what: string): never {
+  throw BadRequest(`En la versión nube los backups se manejan con los nativos de ${what === 'Supabase' ? 'Supabase' : 'la plataforma'}.`);
+}
+
 export interface BackupService {
   backupsDir: string;
-  createBackup(userId?: number | null): BackupInfo;
-  listBackups(): BackupInfo[];
-  deleteBackup(name: string): boolean;
-  restoreBackup(name: string): void;
-  autoBackupIfEnabled(): void;
+  createBackup(userId?: number | null): Promise<BackupInfo>;
+  listBackups(): Promise<BackupInfo[]>;
+  deleteBackup(name: string): Promise<boolean>;
+  restoreBackup(name: string): Promise<void>;
+  autoBackupIfEnabled(): Promise<void>;
 }
 
 export function initBackupService(): BackupService {
   const backupsDir = path.join(process.cwd(), 'backups');
-  if (!existsSync(backupsDir)) mkdirSync(backupsDir, { recursive: true });
+  try {
+    if (!existsSync(backupsDir)) mkdirSync(backupsDir, { recursive: true });
+  } catch {
+    /* noop */
+  }
 
   const stamp = () => {
     const d = new Date();
@@ -25,16 +35,17 @@ export function initBackupService(): BackupService {
     return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
   };
 
-  function createBackup(userId?: number | null): BackupInfo {
+  async function createBackup(userId?: number | null): Promise<BackupInfo> {
+    if (IS_CLOUD) cloudDisabled('Supabase');
     const src = path.join(getDataDir(), 'eventos.db');
     const name = `backup_${stamp()}.db`;
     const dest = path.join(backupsDir, name);
     if (!existsSync(src)) throw BadRequest('No hay base de datos que respaldar');
-    checkpointWal();
+    await checkpointWal();
     copyFileSync(src, dest);
     const info = infoFor(dest);
     logger.info('backup', `Backup creado: ${name}`);
-    audit(userId ?? null, 'backup', 'backup', null, { name });
+    await audit(userId ?? null, 'backup', 'backup', null, { name });
     return info;
   }
 
@@ -47,7 +58,8 @@ export function initBackupService(): BackupService {
     };
   }
 
-  function listBackups(): BackupInfo[] {
+  async function listBackups(): Promise<BackupInfo[]> {
+    if (IS_CLOUD) return [];
     if (!existsSync(backupsDir)) return [];
     const list: BackupInfo[] = readdirSync(backupsDir)
       .filter((f) => f.endsWith('.db'))
@@ -62,7 +74,8 @@ export function initBackupService(): BackupService {
     return list.sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
   }
 
-  function deleteBackup(name: string): boolean {
+  async function deleteBackup(name: string): Promise<boolean> {
+    if (IS_CLOUD) cloudDisabled('Supabase');
     const safe = path.basename(name);
     if (!safe.startsWith('backup_')) throw BadRequest('Nombre de backup inválido');
     const full = path.join(backupsDir, safe);
@@ -71,32 +84,34 @@ export function initBackupService(): BackupService {
     return true;
   }
 
-  function restoreBackup(name: string): void {
+  async function restoreBackup(name: string): Promise<void> {
+    if (IS_CLOUD) cloudDisabled('Supabase');
     const safe = path.basename(name);
     const full = path.join(backupsDir, safe);
     if (!existsSync(full)) throw BadRequest('Backup no encontrado');
     const target = path.join(getDataDir(), 'eventos.db');
     const journal = path.join(getDataDir(), 'eventos.db-wal');
     const shm = path.join(getDataDir(), 'eventos.db-shm');
-    checkpointWal();
-    closeDb();
+    await checkpointWal();
+    await closeDb();
     try {
       for (const extra of [journal, shm]) {
         if (existsSync(extra)) unlinkSync(extra);
       }
       copyFileSync(full, target);
       logger.info('backup', `Backup restaurado: ${safe}`);
-      audit(null, 'restore', 'backup', null, { name: safe });
+      await audit(null, 'restore', 'backup', null, { name: safe });
     } finally {
-      reopenDb();
+      await reopenDb();
     }
   }
 
-  function autoBackupIfEnabled() {
+  async function autoBackupIfEnabled(): Promise<void> {
+    if (IS_CLOUD) return;
     const { getSetting } = require('./settings.service') as typeof import('./settings.service');
-    if (getSetting('auto_backup') === '1') {
+    if ((await getSetting('auto_backup')) === '1') {
       try {
-        createBackup(null);
+        await createBackup(null);
       } catch (e) {
         logger.error('backup', 'Error en backup automático', e);
       }

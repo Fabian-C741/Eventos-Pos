@@ -1,57 +1,56 @@
-# Despliegue en la nube (Vercel + Supabase) — Contrato de seguridad
+# Despliegue en la nube (Vercel + Supabase)
 
-Este documento fija las reglas de seguridad que se aplicarán cuando levantemos
-la versión en la nube. La versión de escritorio ya cumple la parte local; acá se
-define cómo se protegen las credenciales y los datos cuando el sistema pasa a la web.
+Guía operativa de la versión en la nube. El backend corre como función serverless
+(`api/index.ts`), usa **Postgres de Supabase** como base y la UI se sirve desde
+`dist/public`.
 
-## 1. Claves de Supabase: SOLO en el servidor
+## 1. Arquitectura
 
-- La clave `service_role` de Supabase **NUNCA** debe aparecer en el frontend,
-  en archivos de configuración versionados, ni en variables de entorno del
-  cliente (código de la app).
-- Se guarda únicamente como variable de entorno en Vercel
-  (`SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_URL`), que solo lee el backend serverless.
-- La clave `anon` (pública) se usa exclusivamente con **Row Level Security (RLS)**
-  activado y políticas restrictivas por usuario.
-- Regla práctica: si un secreto puede ser leído por el navegador, no es secreto.
+- **Desktop (local)**: servidor Node propio (`src/server/index.ts`) + SQLite
+  (`src/server/db/sqlite.ts`). Sin credenciales.
+- **Nube**: Vercel ejecuta `api/index.ts` (bootstrap async de `src/server/app.ts`)
+  sobre Postgres (`src/server/db/pg.ts`). La fachada `src/server/db/db.ts`
+  elige backend según `process.env.DATABASE_URL`.
+- Ambas comparten los mismos servicios, rutas `/api` y lógica de permisos.
 
-## 2. Acceso a datos desde el frontend
+## 2. Variables de entorno (Vercel)
 
-- El navegador **no consulta Supabase directamente** para datos sensibles.
-  Toda operación pasa por las funciones serverless (mismas rutas `/api`), que
-  validan la sesión y el rol antes de tocar la base de datos.
-- La lógica de permisos (superadmin/admin/cajero) se replica en el servidor
-  serverless, igual que en la versión local.
+| Variable        | Necesaria | Descripción |
+|-----------------|-----------|-------------|
+| `DATABASE_URL`  | **Sí**    | Connection string **"Transaction pooler"** de Supabase. |
+| `EVENTOS_TZ`    | No        | Zona horaria (default `America/Argentina/Buenos_Aires`). |
 
-## 3. Base de datos
+- `DATABASE_URL` debe ser la de **Transaction pooler** (puerto `6543`), NO la de
+  session mode ni la URL con la key `service_role`.
+- Se construye en Supabase → Settings → Database → *Connection string →
+  Transaction pooler*: `postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:6543/postgres`.
+- La **contraseña es la de la base de datos** (la que se crea al inicializar el
+  proyecto), no la clave de servicio.
 
-- Migraciones del esquema local (`src/server/db/schema.sql`) aplicadas a
-  Postgres de Supabase con un adaptador de migraciones.
-- **RLS habilitado** en todas las tablas; políticas que permiten solo lo que
-  cada rol necesita.
-- Las tablas de sesión expiran y se limpian igual que en local (14 días).
+## 3. Esquema y credenciales
 
-## 4. Red y transporte
+- `cloud/schema.sql` es el esquema Postgres (equivalente a `src/server/db/schema.sql`).
+  Ya se ejecutó en Supabase (SQL Editor). Sirve de referencia y para recrear un proyecto.
+- El driver `postgres` se conecta con el rol `postgres` (propietario): **no hace falta RLS**
+  ni `service_role`. Nunca exponer `DATABASE_URL` ni credenciales al frontend.
+- `pg.ts` registra `types` para `bigint`/`numeric` (los devuelve como `number`) y
+  fija `connection.timezone` a `EVENTOS_TZ`.
 
-- HTTPS obligatorio (Vercel lo provee). HSTS activado.
-- Cabeceras de seguridad iguales a la versión local (CSP, X-Frame-Options DENY,
-  nosniff, Referrer-Policy).
-- Rate limiting en login también en el servidor serverless (mismo límite: 5
-  intentos / 10 min), más límite por IP manejado por la plataforma.
+## 4. Despliegue
 
-## 5. Verificación antes de subir
+- `vercel.json`: build `npm run build:ui`, output `dist/public`, función `api/index.ts`
+  con runtime `nodejs22.x`, rewrites `/api/*` → función y resto → `index.html` (SPA).
+- Push a `master` → Vercel redeploya. Probar:
+  - `/api/auth/status` → `{"setup": true}` (primer alta).
+  - Alta de admin, login, venta, cierre de caja, reportes.
+- Backups nativos y descarga de la base están deshabilitados en la nube
+  (Supabase maneja backups); `settings.auto_backup` no aplica.
 
-- Correr el checklist:
-  - [ ] Sin `SUPABASE_SERVICE_ROLE_KEY` ni `SUPABASE_URL` en código frontend.
-  - [ ] `.env*.local` y `.env` en `.gitignore`.
-  - [ ] RLS activo con políticas revisadas.
-  - [ ] `npm test` verde (22 tests).
-  - [ ] Login con PIN bloqueado tras 5 intentos (verificado en la nube).
-  - [ ] Cabecera CSP presente en respuestas del serverless.
+## 5. Checklist de seguridad
 
-## 6. Puntos de contacto con la app local
-
-- Las claves de Supabase se inyectan por variables de entorno al servidor
-  serverless; la versión local sigue usando SQLite sin credenciales en código.
-- El backup local (escritorio) y los datos de la nube conviven: en el evento se
-  usa local con cola offline; al volver a tener internet se sincroniza.
+- [ ] `DATABASE_URL` solo como variable de entorno (nunca en código ni frontend).
+- [ ] `.env*.local` y `.env` en `.gitignore`.
+- [ ] `npm test` verde (31 tests) y `npx tsc --noEmit` sin errores.
+- [ ] Cabeceras CSP/security presentes en respuestas del serverless.
+- [ ] Login con PIN bloqueado tras 5 intentos (verificado en la nube).
+- [ ] No hay `service_role` usada por el driver (se usa el rol de la DB).

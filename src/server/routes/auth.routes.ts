@@ -15,17 +15,17 @@ import { initSequenceCounters } from '../services/auth.service';
 
 const router = Router();
 
-router.get('/status', (_req, res) => {
-  res.json({ setup: needsSetup() });
+router.get('/status', async (_req, res) => {
+  res.json({ setup: await needsSetup() });
 });
 
-router.post('/setup', (req, res, next) => {
+router.post('/setup', async (req, res, next) => {
   try {
-    if (!needsSetup()) {
+    if (!(await needsSetup())) {
       res.status(400).json({ error: 'El sistema ya está configurado', code: 'VALIDATION' });
       return;
     }
-    createSuperadmin(
+    await createSuperadmin(
       sanitizeInput(req.body.email, 100),
       String(req.body.password ?? ''),
       sanitizeInput(req.body.name, 100),
@@ -37,54 +37,54 @@ router.post('/setup', (req, res, next) => {
   }
 });
 
-router.post('/login', (req, res, next) => {
+router.post('/login', async (req, res, next) => {
   try {
     const device = attachDevice(req);
-    const { token, user } = login(
+    const { token, user } = await login(
       sanitizeInput(req.body.username, 100),
       String(req.body.password ?? ''),
       device,
     );
-    audit(user.id, 'login', 'session', null, { device });
+    await audit(user.id, 'login', 'session', null, { device });
     res.json({ token, user });
   } catch (e) {
     next(e);
   }
 });
 
-router.post('/login/pin', (req, res, next) => {
+router.post('/login/pin', async (req, res, next) => {
   try {
     const device = attachDevice(req);
-    const { token, user } = loginPin(
+    const { token, user } = await loginPin(
       sanitizeInput(req.body.username, 100),
       String(req.body.pin ?? ''),
       device,
     );
-    audit(user.id, 'login_pin', 'session', null, { device });
+    await audit(user.id, 'login_pin', 'session', null, { device });
     res.json({ token, user });
   } catch (e) {
     next(e);
   }
 });
 
-router.post('/logout', requireAuth, (req: AuthedRequest, res) => {
+router.post('/logout', requireAuth, async (req: AuthedRequest, res) => {
   const token = (req.headers.authorization || '').replace('Bearer ', '');
-  logout(token);
+  await logout(token);
   res.json({ ok: true });
 });
 
-router.post('/change-password', requireAuth, (req: AuthedRequest, res, next) => {
+router.post('/change-password', requireAuth, async (req: AuthedRequest, res, next) => {
   try {
-    changeOwnPassword(req.user!.id, String(req.body.current ?? ''), String(req.body.next ?? ''));
-    audit(req.user!.id, 'change_password', 'user', req.user!.id, {});
+    await changeOwnPassword(req.user!.id, String(req.body.current ?? ''), String(req.body.next ?? ''));
+    await audit(req.user!.id, 'change_password', 'user', req.user!.id, {});
     res.json({ ok: true });
   } catch (e) {
     next(e);
   }
 });
 
-router.post('/init-sequences', requireAuth, (_req: AuthedRequest, res) => {
-  initSequenceCounters();
+router.post('/init-sequences', requireAuth, async (_req: AuthedRequest, res) => {
+  await initSequenceCounters();
   res.json({ ok: true });
 });
 

@@ -9,7 +9,7 @@ import dashboardRoutes from './routes/dashboard.routes';
 import systemRoutes from './routes/system.routes';
 import { errorHandler } from './auth';
 import { logger } from './logger';
-import { getDb } from './db/db';
+import { insertAppLog } from './db/db';
 
 export function createApp() {
   const app = express();
@@ -17,15 +17,9 @@ export function createApp() {
   app.use(express.json({ limit: '2mb' }));
 
   logger.setDbSink((entry) => {
-    try {
-      getDb()
-        .prepare(
-          'INSERT INTO app_logs (level, module, message, details, user_id, device) VALUES (?, ?, ?, ?, ?, ?)',
-        )
-        .run(entry.level, entry.module, entry.message, entry.details != null ? String(entry.details) : null, entry.userId ?? null, entry.device ?? null);
-    } catch {
+    insertAppLog(entry.level, entry.module, entry.message, entry.details, entry.userId ?? null, entry.device).catch(() => {
       /* noop */
-    }
+    });
   });
 
   app.use((req, res, next) => {

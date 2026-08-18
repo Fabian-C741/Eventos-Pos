@@ -53,9 +53,9 @@ const P_LABEL: Record<PaymentMethod, string> = {
   otro: 'Otro',
 };
 
-export function reporteDiario(f: Filters): ReportResult {
+export async function reporteDiario(f: Filters): Promise<ReportResult> {
   const { where, params } = buildWhere(f);
-  const rows = allRows<Record<string, unknown>>(
+  const rows = await allRows<Record<string, unknown>>(
     `SELECT substr(s.created_at, 1, 10) AS fecha,
        COALESCE(SUM(CASE WHEN s.payment_method = 'efectivo' THEN s.total ELSE 0 END), 0) AS efectivo,
        COALESCE(SUM(CASE WHEN s.payment_method = 'transferencia' THEN s.total ELSE 0 END), 0) AS transferencia,
@@ -83,9 +83,9 @@ export function reporteDiario(f: Filters): ReportResult {
   };
 }
 
-export function reporteCajeros(f: Filters): ReportResult {
+export async function reporteCajeros(f: Filters): Promise<ReportResult> {
   const { where, params } = buildWhere(f);
-  const rows = allRows<Record<string, unknown>>(
+  const rows = await allRows<Record<string, unknown>>(
     `SELECT COALESCE(u.name, 'Eliminado') AS cajero, u.role AS rol,
        COUNT(*) AS ventas,
        COALESCE(SUM(CASE WHEN s.payment_method = 'efectivo' THEN s.total ELSE 0 END), 0) AS efectivo,
@@ -94,7 +94,7 @@ export function reporteCajeros(f: Filters): ReportResult {
        COALESCE(SUM(s.total), 0) AS total
      FROM sales s LEFT JOIN users u ON u.id = s.user_id
      WHERE ${where.join(' AND ')}
-     GROUP BY u.name ORDER BY total DESC`,
+     GROUP BY u.name, u.role ORDER BY total DESC`,
     ...params,
   );
   return {
@@ -113,9 +113,9 @@ export function reporteCajeros(f: Filters): ReportResult {
   };
 }
 
-export function reporteCajas(f: Filters): ReportResult {
+export async function reporteCajas(f: Filters): Promise<ReportResult> {
   const { where, params } = buildWhere(f);
-  const rows = allRows<Record<string, unknown>>(
+  const rows = await allRows<Record<string, unknown>>(
     `SELECT COALESCE(b.name, 'Sin caja') AS caja,
        COUNT(*) AS ventas,
        COALESCE(SUM(s.total), 0) AS total,
@@ -140,9 +140,9 @@ export function reporteCajas(f: Filters): ReportResult {
   };
 }
 
-export function reporteProductos(f: Filters): ReportResult {
+export async function reporteProductos(f: Filters): Promise<ReportResult> {
   const { where, params } = buildWhere(f);
-  const rows = allRows<Record<string, unknown>>(
+  const rows = await allRows<Record<string, unknown>>(
     `SELECT si.product_name AS producto,
        COALESCE(SUM(si.quantity), 0) AS cantidad,
        COALESCE(SUM(si.subtotal), 0) AS total
@@ -163,9 +163,9 @@ export function reporteProductos(f: Filters): ReportResult {
   };
 }
 
-export function reporteEntradas(f: Filters): ReportResult {
+export async function reporteEntradas(f: Filters): Promise<ReportResult> {
   const { where, params } = buildWhere(f);
-  const rows = allRows<Record<string, unknown>>(
+  const rows = await allRows<Record<string, unknown>>(
     `SELECT st.ticket_type_name AS tipo, t.kind AS clase,
        COALESCE(SUM(st.quantity), 0) AS cantidad,
        COALESCE(SUM(st.subtotal), 0) AS total
@@ -173,7 +173,7 @@ export function reporteEntradas(f: Filters): ReportResult {
      LEFT JOIN ticket_types t ON t.id = st.ticket_type_id
      LEFT JOIN sales s ON s.id = st.sale_id
      WHERE ${where.join(' AND ')}
-     GROUP BY st.ticket_type_name ORDER BY total DESC`,
+     GROUP BY st.ticket_type_name, t.kind ORDER BY total DESC`,
     ...params,
   );
   return {
@@ -189,9 +189,9 @@ export function reporteEntradas(f: Filters): ReportResult {
   };
 }
 
-export function reportePagos(f: Filters): ReportResult {
+export async function reportePagos(f: Filters): Promise<ReportResult> {
   const { where, params } = buildWhere(f);
-  const rows = allRows<Record<string, unknown>>(
+  const rows = await allRows<Record<string, unknown>>(
     `SELECT s.payment_method AS pago,
        COUNT(*) AS ventas,
        COALESCE(SUM(s.total), 0) AS total
@@ -211,10 +211,10 @@ export function reportePagos(f: Filters): ReportResult {
   };
 }
 
-export function reporteCierres(f: Filters): ReportResult {
+export async function reporteCierres(f: Filters): Promise<ReportResult> {
   const { where, params } = buildWhere(f, false);
   const extra = f.event_id ? 'AND c.event_id = ?' : '';
-  const rows = allRows<Record<string, unknown>>(
+  const rows = await allRows<Record<string, unknown>>(
     `SELECT c.id, b.name AS caja, u.name AS cajero,
        c.opened_at AS apertura, c.closed_at AS cierre,
        c.expected_total AS esperado, c.declared_total AS declarado, c.difference AS diferencia,
@@ -245,7 +245,7 @@ export function reporteCierres(f: Filters): ReportResult {
   };
 }
 
-export function getReport(type: string, f: Filters): ReportResult {
+export async function getReport(type: string, f: Filters): Promise<ReportResult> {
   switch (type) {
     case 'diario':
       return reporteDiario(f);

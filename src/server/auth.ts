@@ -14,17 +14,21 @@ export function attachDevice(req: Request) {
   return (viaHeader || viaUserAgent).slice(0, 120);
 }
 
-export function requireAuth(req: AuthedRequest, res: Response, next: NextFunction) {
-  const auth = req.headers.authorization || '';
-  const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
-  const user = validateSession(token);
-  if (!user) {
-    res.status(401).json({ error: 'Sesión inválida o expirada', code: 'UNAUTHORIZED' });
-    return;
+export async function requireAuth(req: AuthedRequest, res: Response, next: NextFunction) {
+  try {
+    const auth = req.headers.authorization || '';
+    const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+    const user = await validateSession(token);
+    if (!user) {
+      res.status(401).json({ error: 'Sesión inválida o expirada', code: 'UNAUTHORIZED' });
+      return;
+    }
+    req.user = user;
+    req.device = attachDevice(req);
+    next();
+  } catch (e) {
+    next(e);
   }
-  req.user = user;
-  req.device = attachDevice(req);
-  next();
 }
 
 export function requireRole(...roles: Role[]) {

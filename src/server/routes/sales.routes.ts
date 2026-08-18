@@ -10,8 +10,8 @@ import type { PaymentMethod } from '../../shared/types';
 const router = Router();
 router.use(requireAuth);
 
-function validateEventAccess(eventId: number, user: { id: number; role: string }) {
-  const ev = getEvent(eventId);
+async function validateEventAccess(eventId: number) {
+  const ev = await getEvent(eventId);
   if (!ev) throw BadRequest('Evento no encontrado');
   if (ev.active !== 1) {
     throw Object.assign(new Error('El evento está inactivo'), { friendly: 'El evento está inactivo. No se pueden registrar ventas.' });
@@ -19,17 +19,17 @@ function validateEventAccess(eventId: number, user: { id: number; role: string }
   return ev;
 }
 
-router.post('/', (req: AuthedRequest, res, next) => {
+router.post('/', async (req: AuthedRequest, res, next) => {
   try {
     const eventId = parseNumber(req.body.event_id);
-    validateEventAccess(eventId, req.user!);
+    await validateEventAccess(eventId);
     const boxId = req.body.box_id ? parseNumber(req.body.box_id) : null;
     if (boxId) {
-      const box = getBox(boxId);
+      const box = await getBox(boxId);
       if (!box) throw BadRequest('Caja no encontrada');
     }
     const payment = req.body.payment_method as PaymentMethod;
-    const result = createSale({
+    const result = await createSale({
       event_id: eventId,
       box_id: boxId,
       user_id: req.user!.id,
@@ -44,9 +44,9 @@ router.post('/', (req: AuthedRequest, res, next) => {
   }
 });
 
-router.get('/', (req: AuthedRequest, res) => {
+router.get('/', async (req: AuthedRequest, res) => {
   const q = req.query as Record<string, string>;
-  const sales = listSales({
+  const sales = await listSales({
     event_id: parseOptionalInt(q.event_id),
     box_id: parseOptionalInt(q.box_id),
     user_id: parseOptionalInt(q.user_id),
@@ -60,34 +60,34 @@ router.get('/', (req: AuthedRequest, res) => {
   res.json(sales);
 });
 
-router.get('/operation', (req: AuthedRequest, res, next) => {
+router.get('/operation', async (req: AuthedRequest, res, next) => {
   try {
-    const op = getOperationNumber(parseNumber(req.query.event_id));
+    const op = await getOperationNumber(parseNumber(req.query.event_id));
     res.json({ operation_number: op });
   } catch (e) {
     next(e);
   }
 });
 
-router.get('/box/:boxId/recent', (req, res, next) => {
+router.get('/box/:boxId/recent', async (req, res, next) => {
   try {
-    res.json(lastSalesForBox(parseNumber(req.params.boxId)));
+    res.json(await lastSalesForBox(parseNumber(req.params.boxId)));
   } catch (e) {
     next(e);
   }
 });
 
-router.get('/:id', (req, res, next) => {
+router.get('/:id', async (req, res, next) => {
   try {
-    res.json(getSaleDetail(parseNumber(req.params.id)));
+    res.json(await getSaleDetail(parseNumber(req.params.id)));
   } catch (e) {
     next(e);
   }
 });
 
-router.post('/:id/void', requireRole('superadmin', 'admin'), (req: AuthedRequest, res, next) => {
+router.post('/:id/void', requireRole('superadmin', 'admin'), async (req: AuthedRequest, res, next) => {
   try {
-    const detail = voidSale(parseNumber(req.params.id), req.user!.id, String(req.body.reason ?? ''), req.device);
+    const detail = await voidSale(parseNumber(req.params.id), req.user!.id, String(req.body.reason ?? ''), req.device);
     res.json(detail);
   } catch (e) {
     next(e);

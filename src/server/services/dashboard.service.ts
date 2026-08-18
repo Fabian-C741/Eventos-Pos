@@ -2,7 +2,7 @@ import { allRows, getRow } from '../db/db';
 import type { DashboardData, StatsData, SeriesPoint, SeriesMultiPoint } from '../../shared/types';
 import { PAYMENT_METHODS } from '../../shared/constants';
 
-export function dashboard(eventId?: number, from?: string, to?: string): DashboardData {
+export async function dashboard(eventId?: number, from?: string, to?: string): Promise<DashboardData> {
   const where: string[] = ["s.status = 'activa'"];
   const params: unknown[] = [];
   if (eventId) {
@@ -19,7 +19,7 @@ export function dashboard(eventId?: number, from?: string, to?: string): Dashboa
   }
   const whereSql = where.join(' AND ');
 
-  const totals = getRow<{
+  const totals = (await getRow<{
     total: number;
     efectivo: number;
     transferencia: number;
@@ -35,9 +35,9 @@ export function dashboard(eventId?: number, from?: string, to?: string): Dashboa
        COUNT(*) AS ventas
      FROM sales s WHERE ${whereSql}`,
     ...params,
-  )!;
+  ))!;
 
-  const tickets = getRow<{ entradas: number; boletas: number; rifas: number; bonos: number }>(
+  const tickets = (await getRow<{ entradas: number; boletas: number; rifas: number; bonos: number }>(
     `SELECT
        COALESCE(SUM(CASE WHEN t.kind = 'entrada' THEN st.quantity ELSE 0 END), 0) AS entradas,
        COALESCE(SUM(CASE WHEN t.kind = 'boleta' THEN st.quantity ELSE 0 END), 0) AS boletas,
@@ -48,21 +48,21 @@ export function dashboard(eventId?: number, from?: string, to?: string): Dashboa
      LEFT JOIN sales s ON s.id = st.sale_id
      WHERE ${whereSql}`,
     ...params,
-  )!;
+  ))!;
 
-  const productos = getRow<{ c: number }>(
+  const productos = (await getRow<{ c: number }>(
     `SELECT COALESCE(SUM(si.quantity), 0) AS c
      FROM sale_items si LEFT JOIN sales s ON s.id = si.sale_id WHERE ${whereSql}`,
     ...params,
-  )!;
+  ))!;
 
-  const anuladas = getRow<{ ventas: number; monto: number }>(
+  const anuladas = (await getRow<{ ventas: number; monto: number }>(
     `SELECT COUNT(*) AS ventas, COALESCE(SUM(total), 0) AS monto
      FROM sales WHERE status = 'anulada' ${eventId ? 'AND event_id = ?' : ''} ${from ? 'AND created_at >= ?' : ''} ${to ? 'AND created_at <= ?' : ''}`,
     ...(eventId ? [eventId] : []),
     ...(from ? [from + ' 00:00:00'] : []),
     ...(to ? [to + ' 23:59:59'] : []),
-  )!;
+  ))!;
 
   return {
     total_recaudado: totals.total,
@@ -79,7 +79,7 @@ export function dashboard(eventId?: number, from?: string, to?: string): Dashboa
   };
 }
 
-export function stats(eventId?: number, from?: string, to?: string): StatsData {
+export async function stats(eventId?: number, from?: string, to?: string): Promise<StatsData> {
   const where: string[] = ["s.status = 'activa'"];
   const params: unknown[] = [];
   if (eventId) {
@@ -96,7 +96,7 @@ export function stats(eventId?: number, from?: string, to?: string): StatsData {
   }
   const whereSql = where.join(' AND ');
 
-  const porHoraRows = allRows<{ h: number; payment_method: string; v: number }>(
+  const porHoraRows = await allRows<{ h: number; payment_method: string; v: number }>(
     `SELECT CAST(strftime('%H', s.created_at) AS INTEGER) AS h, s.payment_method, COALESCE(SUM(s.total), 0) AS v
      FROM sales s WHERE ${whereSql} GROUP BY h, s.payment_method`,
     ...params,
@@ -112,7 +112,7 @@ export function stats(eventId?: number, from?: string, to?: string): StatsData {
     porHora.push(pt);
   }
 
-  const porDiaRows = allRows<{ d: string; payment_method: string; v: number }>(
+  const porDiaRows = await allRows<{ d: string; payment_method: string; v: number }>(
     `SELECT substr(s.created_at, 1, 10) AS d, s.payment_method, COALESCE(SUM(s.total), 0) AS v
      FROM sales s WHERE ${whereSql} GROUP BY d, s.payment_method ORDER BY d`,
     ...params,
@@ -128,7 +128,7 @@ export function stats(eventId?: number, from?: string, to?: string): StatsData {
   }
   const porDia = [...porDiaMap.values()].slice(-14);
 
-  const topProductosRows = allRows<{ name: string; v: number }>(
+  const topProductosRows = await allRows<{ name: string; v: number }>(
     `SELECT si.product_name AS name, COALESCE(SUM(si.quantity), 0) AS v
      FROM sale_items si LEFT JOIN sales s ON s.id = si.sale_id
      WHERE ${whereSql}
@@ -137,7 +137,7 @@ export function stats(eventId?: number, from?: string, to?: string): StatsData {
   );
   const topProductos: SeriesPoint[] = topProductosRows.map((r) => ({ label: r.name, value: Number(r.v) }));
 
-  const porCategoriaRows = allRows<{ name: string; v: number }>(
+  const porCategoriaRows = await allRows<{ name: string; v: number }>(
     `SELECT COALESCE(c.name, 'Sin categoría') AS name, COALESCE(SUM(si.subtotal), 0) AS v
      FROM sale_items si
      LEFT JOIN products p ON p.id = si.product_id
@@ -149,23 +149,23 @@ export function stats(eventId?: number, from?: string, to?: string): StatsData {
   );
   const porCategoria: SeriesPoint[] = porCategoriaRows.map((r) => ({ label: r.name, value: Number(r.v) }));
 
-  const porCajeroRows = allRows<{ name: string; v: number }>(
+  const porCajeroRows = await allRows<{ name: string; v: number }>(
     `SELECT COALESCE(u.name, 'Eliminado') AS name, COALESCE(SUM(s.total), 0) AS v
      FROM sales s LEFT JOIN users u ON u.id = s.user_id
-     WHERE ${whereSql} GROUP BY u.name ORDER BY v DESC`,
+     WHERE ${whereSql} GROUP BY COALESCE(u.name, 'Eliminado') ORDER BY v DESC`,
     ...params,
   );
   const porCajero: SeriesPoint[] = porCajeroRows.map((r) => ({ label: r.name || 'Sin nombre', value: Number(r.v) }));
 
-  const porCajaRows = allRows<{ name: string; v: number }>(
+  const porCajaRows = await allRows<{ name: string; v: number }>(
     `SELECT COALESCE(b.name, 'Sin caja') AS name, COALESCE(SUM(s.total), 0) AS v
      FROM sales s LEFT JOIN boxes b ON b.id = s.box_id
-     WHERE ${whereSql} GROUP BY b.name ORDER BY v DESC`,
+     WHERE ${whereSql} GROUP BY COALESCE(b.name, 'Sin caja') ORDER BY v DESC`,
     ...params,
   );
   const porCaja: SeriesPoint[] = porCajaRows.map((r) => ({ label: r.name || 'Sin caja', value: Number(r.v) }));
 
-  const porPagoRows = allRows<{ payment_method: string; v: number }>(
+  const porPagoRows = await allRows<{ payment_method: string; v: number }>(
     `SELECT s.payment_method, COALESCE(SUM(s.total), 0) AS v
      FROM sales s WHERE ${whereSql} GROUP BY s.payment_method`,
     ...params,
@@ -176,7 +176,7 @@ export function stats(eventId?: number, from?: string, to?: string): StatsData {
     value: Number(r.v),
   }));
 
-  const porTipoTicketRows = allRows<{ name: string; v: number }>(
+  const porTipoTicketRows = await allRows<{ name: string; v: number }>(
     `SELECT COALESCE(st.ticket_type_name, 'Otro') AS name, COALESCE(SUM(st.quantity), 0) AS v
      FROM sale_tickets st LEFT JOIN sales s ON s.id = st.sale_id
      WHERE ${whereSql}

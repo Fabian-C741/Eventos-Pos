@@ -15,31 +15,36 @@ process.on('unhandledRejection', (reason) => {
 
 const PORT = Number(process.env.PORT || 4100);
 
-initDb();
+async function main() {
+  await initDb();
+  await initSequenceCounters();
+  const backup = initBackupService();
 
-// Registrar logs de la app en la base de datos (lo hace createApp vía logger.setDbSink)
-initSequenceCounters();
-const backup = initBackupService();
-
-// Backup automático al iniciar
-try {
-  if (getSetting('auto_backup') === '1') {
-    backup.createBackup(null);
-  }
-} catch (e) {
-  logger.warn('backup', 'No se pudo crear backup inicial', e);
-}
-
-// Backup diario automático
-setInterval(() => {
+  // Backup automático al iniciar
   try {
-    if (getSetting('auto_backup') === '1') {
-      backup.createBackup(null);
-      logger.info('backup', 'Backup diario automático realizado');
+    if ((await getSetting('auto_backup')) === '1') {
+      await backup.createBackup(null);
     }
   } catch (e) {
-    logger.error('backup', 'Error en backup automático diario', e);
+    logger.warn('backup', 'No se pudo crear backup inicial', e);
   }
-}, 24 * 60 * 60 * 1000);
 
-startServer(PORT);
+  // Backup diario automático
+  setInterval(async () => {
+    try {
+      if ((await getSetting('auto_backup')) === '1') {
+        await backup.createBackup(null);
+        logger.info('backup', 'Backup diario automático realizado');
+      }
+    } catch (e) {
+      logger.error('backup', 'Error en backup automático diario', e);
+    }
+  }, 24 * 60 * 60 * 1000);
+
+  startServer(PORT);
+}
+
+main().catch((e) => {
+  logger.fatal('process', 'Error al iniciar el servidor', e);
+  process.exit(1);
+});

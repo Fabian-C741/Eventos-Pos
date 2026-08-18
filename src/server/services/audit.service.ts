@@ -1,8 +1,8 @@
 import { exec } from '../db/db';
 
-export function audit(userId: number | null, action: string, entity: string, entityId: number | null, details?: unknown) {
+export async function audit(userId: number | null, action: string, entity: string, entityId: number | null, details?: unknown) {
   try {
-    exec(
+    await exec(
       'INSERT INTO audit_log (user_id, action, entity, entity_id, details) VALUES (?, ?, ?, ?, ?)',
       userId,
       action,

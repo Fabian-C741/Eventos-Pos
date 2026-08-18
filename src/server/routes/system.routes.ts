@@ -11,28 +11,29 @@ import { getDataDir } from '../db/db';
 const router = Router();
 router.use(requireAuth);
 
+const IS_CLOUD = !!process.env.DATABASE_URL;
 const backup = initBackupService();
 
 // ----- Settings (superadmin) -----
-router.get('/settings', requireRole('superadmin'), (_req, res) => {
-  res.json(getSettings());
+router.get('/settings', requireRole('superadmin'), async (_req, res) => {
+  res.json(await getSettings());
 });
 
-router.put('/settings', requireRole('superadmin'), (req: AuthedRequest, res, next) => {
+router.put('/settings', requireRole('superadmin'), async (req: AuthedRequest, res, next) => {
   try {
     const { key, value } = req.body;
-    setSetting(String(key), String(value), req.user!.id);
-    res.json(getSettings());
+    await setSetting(String(key), String(value), req.user!.id);
+    res.json(await getSettings());
   } catch (e) {
     next(e);
   }
 });
 
 // ----- Logs (solo superadmin) -----
-router.get('/logs', requireRole('superadmin'), (req: AuthedRequest, res) => {
+router.get('/logs', requireRole('superadmin'), async (req: AuthedRequest, res) => {
   const q = req.query as Record<string, string>;
   res.json(
-    listAppLogs({
+    await listAppLogs({
       level: q.level,
       from: q.from,
       to: q.to,
@@ -42,10 +43,10 @@ router.get('/logs', requireRole('superadmin'), (req: AuthedRequest, res) => {
   );
 });
 
-router.get('/audit', requireRole('superadmin'), (req: AuthedRequest, res) => {
+router.get('/audit', requireRole('superadmin'), async (req: AuthedRequest, res) => {
   const q = req.query as Record<string, string>;
   res.json(
-    listAudit({
+    await listAudit({
       user_id: parseOptionalInt(q.user_id),
       from: q.from,
       to: q.to,
@@ -55,38 +56,42 @@ router.get('/audit', requireRole('superadmin'), (req: AuthedRequest, res) => {
 });
 
 // ----- Backups (solo superadmin) -----
-router.get('/backups', requireRole('superadmin'), (_req, res) => {
-  res.json(backup.listBackups());
+router.get('/backups', requireRole('superadmin'), async (_req, res) => {
+  res.json(await backup.listBackups());
 });
 
-router.post('/backups', requireRole('superadmin'), (req: AuthedRequest, res, next) => {
+router.post('/backups', requireRole('superadmin'), async (req: AuthedRequest, res, next) => {
   try {
-    const info = backup.createBackup(req.user!.id);
+    const info = await backup.createBackup(req.user!.id);
     res.json(info);
   } catch (e) {
     next(e);
   }
 });
 
-router.delete('/backups/:name', requireRole('superadmin'), (req: AuthedRequest, res, next) => {
+router.delete('/backups/:name', requireRole('superadmin'), async (req: AuthedRequest, res, next) => {
   try {
-    backup.deleteBackup(decodeURIComponent(req.params.name));
+    await backup.deleteBackup(decodeURIComponent(req.params.name));
     res.json({ ok: true });
   } catch (e) {
     next(e);
   }
 });
 
-router.post('/backups/:name/restore', requireRole('superadmin'), (req: AuthedRequest, res, next) => {
+router.post('/backups/:name/restore', requireRole('superadmin'), async (req: AuthedRequest, res, next) => {
   try {
-    backup.restoreBackup(decodeURIComponent(req.params.name));
+    await backup.restoreBackup(decodeURIComponent(req.params.name));
     res.json({ ok: true });
   } catch (e) {
     next(e);
   }
 });
 
-router.get('/backups/download/:name', requireRole('superadmin'), (req, res) => {
+router.get('/backups/download/:name', requireRole('superadmin'), (req: AuthedRequest, res) => {
+  if (IS_CLOUD) {
+    res.status(400).json({ error: 'En la versión nube los backups se manejan con los nativos de Supabase', code: 'VALIDATION' });
+    return;
+  }
   const name = decodeURIComponent(req.params.name);
   const safe = path.basename(name);
   const full = path.join(backup.backupsDir, safe);
@@ -98,6 +103,10 @@ router.get('/backups/download/:name', requireRole('superadmin'), (req, res) => {
 });
 
 router.get('/db/download', requireRole('superadmin'), (_req, res) => {
+  if (IS_CLOUD) {
+    res.status(400).json({ error: 'En la versión nube los datos se administran desde Supabase', code: 'VALIDATION' });
+    return;
+  }
   const src = path.join(getDataDir(), 'eventos.db');
   if (!existsSync(src)) {
     res.status(404).json({ error: 'No hay base de datos' });

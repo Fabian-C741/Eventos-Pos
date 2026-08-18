@@ -7,10 +7,10 @@ import { parseOptionalInt } from './helpers';
 const router = Router();
 router.use(requireAuth);
 
-router.get('/dashboard', (req: AuthedRequest, res) => {
+router.get('/dashboard', async (req: AuthedRequest, res) => {
   const q = req.query as Record<string, string>;
   res.json(
-    dashboard(
+    await dashboard(
       parseOptionalInt(q.event_id),
       q.from,
       q.to,
@@ -18,10 +18,10 @@ router.get('/dashboard', (req: AuthedRequest, res) => {
   );
 });
 
-router.get('/stats', (req: AuthedRequest, res) => {
+router.get('/stats', async (req: AuthedRequest, res) => {
   const q = req.query as Record<string, string>;
   res.json(
-    stats(
+    await stats(
       parseOptionalInt(q.event_id),
       q.from,
       q.to,
@@ -29,10 +29,10 @@ router.get('/stats', (req: AuthedRequest, res) => {
   );
 });
 
-router.get('/reports/:type', (req: AuthedRequest, res, next) => {
+router.get('/reports/:type', async (req: AuthedRequest, res, next) => {
   try {
     const q = req.query as Record<string, string>;
-    const result = getReport(req.params.type, {
+    const result = await getReport(req.params.type, {
       event_id: parseOptionalInt(q.event_id),
       box_id: parseOptionalInt(q.box_id),
       user_id: parseOptionalInt(q.user_id),

@@ -10,35 +10,35 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   device_name: 'Caja central',
 };
 
-export function getSetting(key: string): string {
-  const row = getRow<{ value: string }>('SELECT value FROM settings WHERE key = ?', key);
+export async function getSetting(key: string): Promise<string> {
+  const row = await getRow<{ value: string }>('SELECT value FROM settings WHERE key = ?', key);
   if (row) return row.value;
   const def = DEFAULT_SETTINGS[key];
   if (def !== undefined) {
-    exec('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', key, def);
+    await exec('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', key, def);
     return def;
   }
   return '';
 }
 
-export function getSettings(): AppSettings {
+export async function getSettings(): Promise<AppSettings> {
   return {
-    app_name: getSetting('app_name'),
-    sound_enabled: getSetting('sound_enabled'),
-    auto_backup: getSetting('auto_backup'),
-    device_name: getSetting('device_name'),
+    app_name: await getSetting('app_name'),
+    sound_enabled: await getSetting('sound_enabled'),
+    auto_backup: await getSetting('auto_backup'),
+    device_name: await getSetting('device_name'),
   };
 }
 
-export function setSetting(key: string, value: string, userId: number) {
+export async function setSetting(key: string, value: string, userId: number) {
   const allowed = Object.keys(DEFAULT_SETTINGS);
   if (!allowed.includes(key)) throw BadRequest('Configuración no válida');
-  exec('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', key, String(value).slice(0, 200));
-  audit(userId, 'update', 'settings', null, { key });
+  await exec('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', key, String(value).slice(0, 200));
+  await audit(userId, 'update', 'settings', null, { key });
   return true;
 }
 
-export function listAppLogs(filters: { level?: string; from?: string; to?: string; module?: string; limit?: number }): unknown[] {
+export async function listAppLogs(filters: { level?: string; from?: string; to?: string; module?: string; limit?: number }): Promise<unknown[]> {
   const where: string[] = [];
   const params: unknown[] = [];
   if (filters.level) {
@@ -67,7 +67,7 @@ export function listAppLogs(filters: { level?: string; from?: string; to?: strin
   );
 }
 
-export function listAudit(filters: { user_id?: number; from?: string; to?: string; limit?: number }): unknown[] {
+export async function listAudit(filters: { user_id?: number; from?: string; to?: string; limit?: number }): Promise<unknown[]> {
   const where: string[] = [];
   const params: unknown[] = [];
   if (filters.user_id) {
