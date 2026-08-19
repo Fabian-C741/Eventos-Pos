@@ -10,6 +10,10 @@ export async function listCategories(eventId: number): Promise<Category[]> {
   );
 }
 
+export async function getCategory(id: number): Promise<Category | undefined> {
+  return getRow<Category>('SELECT * FROM categories WHERE id = ?', id);
+}
+
 export async function createCategory(eventId: number, input: { name: string; icon?: string; color?: string; sort_order?: number }, userId: number) {
   const name = input.name.trim();
   if (!name) throw BadRequest('El nombre de la categoría es obligatorio');

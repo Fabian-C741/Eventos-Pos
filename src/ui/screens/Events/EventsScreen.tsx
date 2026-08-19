@@ -1,28 +1,47 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useData } from '../../context/DataContext';
+import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { api } from '../../api/client';
 import { EmptyState, PageHeader, Field } from '../../components/common/ui';
 import { Modal } from '../../components/common/Modal';
 import { ConfirmDialog } from '../../components/common/ConfirmDialog';
 import { formatDate } from '../../../shared/format';
-import type { Event } from '../../../shared/types';
+import type { Event, User } from '../../../shared/types';
 
 export function EventsScreen() {
   const { events, refreshEvents, setActiveEvent, activeEvent } = useData();
+  const { user: me } = useAuth();
   const { push } = useToast();
+  const [admins, setAdmins] = useState<User[]>([]);
   const [editing, setEditing] = useState<Event | null>(null);
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState<Event | null>(null);
-  const [form, setForm] = useState({ name: '', venue: '', start_date: '', end_date: '', description: '', active: 1 });
+  const [form, setForm] = useState({ name: '', venue: '', start_date: '', end_date: '', description: '', active: 1, owner_id: '' as string | number });
+
+  useEffect(() => {
+    if (me?.role !== 'superadmin') return;
+    api
+      .get<User[]>('/users')
+      .then((us) => setAdmins(us.filter((u) => u.role === 'admin')))
+      .catch(() => {});
+  }, [me?.role]);
 
   const openCreate = () => {
-    setForm({ name: '', venue: '', start_date: '', end_date: '', description: '', active: 1 });
+    setForm({ name: '', venue: '', start_date: '', end_date: '', description: '', active: 1, owner_id: '' });
     setCreating(true);
   };
 
   const openEdit = (e: Event) => {
-    setForm({ name: e.name, venue: e.venue, start_date: e.start_date, end_date: e.end_date, description: e.description, active: e.active });
+    setForm({
+      name: e.name,
+      venue: e.venue,
+      start_date: e.start_date,
+      end_date: e.end_date,
+      description: e.description,
+      active: e.active,
+      owner_id: e.owner_id ?? '',
+    });
     setEditing(e);
   };
 
@@ -32,11 +51,13 @@ export function EventsScreen() {
       return;
     }
     try {
+      const payload: Record<string, unknown> = { ...form };
+      payload.owner_id = form.owner_id === '' || form.owner_id === 0 ? null : Number(form.owner_id);
       if (editing) {
-        await api.put(`/events/${editing.id}`, form);
+        await api.put(`/events/${editing.id}`, payload);
         push('success', 'Evento actualizado');
       } else {
-        await api.post('/events', form);
+        await api.post('/events', payload);
         push('success', 'Evento creado');
       }
       await refreshEvents();
@@ -87,6 +108,15 @@ export function EventsScreen() {
                 {e.start_date && `Desde ${formatDate(e.start_date)}`}
                 {e.end_date && ` · Hasta ${formatDate(e.end_date)}`}
               </div>
+              {me?.role === 'superadmin' && (
+                <div className="mt-8" style={{ fontSize: 12.5 }}>
+                  {e.owner_id ? (
+                    <span className="badge badge-blue">Dueño: {admins.find((a) => a.id === e.owner_id)?.name || 'Admin'}</span>
+                  ) : (
+                    <span className="badge badge-violet">Sin dueño (solo superadmin)</span>
+                  )}
+                </div>
+              )}
               {e.description && <div className="muted mt-8" style={{ fontSize: 13 }}>{e.description}</div>}
               <div className="row mt-16" style={{ flexWrap: 'wrap' }}>
                 <button className="btn btn-ghost btn-sm" onClick={() => setActiveEvent(e.id)}>
@@ -118,6 +148,20 @@ export function EventsScreen() {
         <Field label="Descripción">
           <textarea className="textarea" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={2} />
         </Field>
+        {me?.role === 'superadmin' && (
+          <Field label="Asignar a admin (dueño)">
+            <select
+              className="input"
+              value={form.owner_id}
+              onChange={(e) => setForm({ ...form, owner_id: e.target.value })}
+            >
+              <option value="">Sin dueño (solo superadmin)</option>
+              {admins.map((a) => (
+                <option key={a.id} value={a.id}>{a.name} ({a.username})</option>
+              ))}
+            </select>
+          </Field>
+        )}
         <label className="row" style={{ marginBottom: 16 }}>
           <input type="checkbox" checked={form.active === 1} onChange={(e) => setForm({ ...form, active: e.target.checked ? 1 : 0 })} />
           <span style={{ fontWeight: 700 }}>Activo (se puede vender)</span>

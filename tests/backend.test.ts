@@ -208,6 +208,61 @@ test('admin no puede crear admin', async () => {
   assert.equal(resOk.status, 200);
 });
 
+test('asignar evento y cajero1 al admin1 (inquilino)', async () => {
+  const users = await api('GET', '/users');
+  const admin1 = users.json.find((u: { username: string }) => u.username === 'admin1');
+  const cajero1 = users.json.find((u: { username: string }) => u.username === 'cajero1');
+  assert.ok(admin1 && cajero1);
+  const ev = await api('PUT', `/events/${eventId}`, { owner_id: admin1.id });
+  assert.equal(ev.status, 200);
+  assert.equal(ev.json.owner_id, admin1.id);
+  const caj = await api('PUT', `/users/${cajero1.id}`, { owner_id: admin1.id });
+  assert.equal(caj.status, 200);
+});
+
+test('SaaS: superadmin asigna evento a otro admin y lo aísla', async () => {
+  const r = await api('POST', '/users', { username: 'admin2', name: 'Admin Dos', role: 'admin', password: 'clave123' });
+  assert.equal(r.status, 200);
+  const admin2Id = r.json.id;
+
+  const ev = await api('POST', '/events', { name: 'Evento de Admin2', owner_id: admin2Id });
+  assert.equal(ev.status, 200);
+  assert.equal(ev.json.owner_id, admin2Id);
+
+  const login2 = await api('POST', '/auth/login', { username: 'admin2', password: 'clave123' }, false);
+  const t2 = login2.json.token;
+  const events2 = await fetch(base + '/events', { headers: { Authorization: `Bearer ${t2}` } });
+  const evs2 = await events2.json();
+  assert.ok(evs2.length >= 1);
+  assert.ok(evs2.some((e: { id: number }) => e.id === ev.json.id));
+  assert.ok(evs2.every((e: { owner_id: number }) => e.owner_id === admin2Id));
+
+  const login1 = await api('POST', '/auth/login', { username: 'admin1', password: 'clave123' }, false);
+  const t1 = login1.json.token;
+  const events1 = await fetch(base + '/events', { headers: { Authorization: `Bearer ${t1}` } });
+  const evs1 = await events1.json();
+  assert.ok(!evs1.some((e: { id: number }) => e.id === ev.json.id));
+
+  const getRes = await fetch(base + `/events/${ev.json.id}`, { headers: { Authorization: `Bearer ${t1}` } });
+  assert.equal(getRes.status, 404);
+
+  const caj = await api('POST', '/users', { username: 'cajero_a2', name: 'Cajero A2', role: 'cajero', pin: '3333', owner_id: admin2Id });
+  assert.equal(caj.status, 200);
+  const cajLogin = await api('POST', '/auth/login/pin', { username: 'cajero_a2', pin: '3333' }, false);
+  const tc = cajLogin.json.token;
+  const eventsC = await fetch(base + '/events', { headers: { Authorization: `Bearer ${tc}` } });
+  const evsC = await eventsC.json();
+  assert.ok(evsC.some((e: { id: number }) => e.id === ev.json.id));
+  assert.ok(evsC.every((e: { owner_id: number }) => e.owner_id === admin2Id));
+
+  const users1 = await fetch(base + '/users', { headers: { Authorization: `Bearer ${t1}` } });
+  const us1 = await users1.json();
+  assert.ok(!us1.some((u: { username: string }) => u.username === 'cajero_a2'));
+
+  const del = await api('DELETE', `/events/${ev.json.id}`);
+  assert.equal(del.status, 200);
+});
+
 test('anulación de venta con motivo', async () => {
   const list = await api('GET', `/sales?event_id=${eventId}&limit=5`);
   const saleId = list.json[0].id;
@@ -354,14 +409,13 @@ test('eliminar evento borra ventas, productos y categorías', async () => {
   const r = await api('DELETE', `/events/${eventId}`);
   assert.equal(r.status, 200);
   assert.equal(r.json.ok, true);
-  const prods = await api('GET', `/events/${eventId}/products`);
-  assert.equal(prods.json.length, 0);
-  const cats = await api('GET', `/events/${eventId}/categories`);
-  assert.equal(cats.json.length, 0);
-  const sales = await api('GET', `/sales?event_id=${eventId}`);
-  assert.equal(sales.json.length, 0);
-  const closes = await api('GET', `/closes?event_id=${eventId}`);
-  assert.equal(closes.json.length, 0);
+  assert.equal((await api('GET', `/events/${eventId}`)).status, 404);
+  assert.equal((await api('GET', `/events/${eventId}/products`)).status, 404);
+  assert.equal((await api('GET', `/events/${eventId}/categories`)).status, 404);
+  assert.equal((await api('GET', `/sales?event_id=${eventId}`)).status, 404);
+  assert.equal((await api('GET', `/closes?event_id=${eventId}`)).status, 404);
+  const globalSales = await api('GET', '/sales?limit=500');
+  assert.ok(!globalSales.json.some((s: { event_id: number }) => s.event_id === eventId));
 });
 
 test('editar cajero: cambiar solo el nombre respeta el PIN actual', async () => {

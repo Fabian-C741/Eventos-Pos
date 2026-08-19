@@ -140,6 +140,7 @@ export async function createSale(input: CreateSaleInput): Promise<CreateSaleResu
 
 export async function listSales(filters: {
   event_id?: number;
+  event_ids?: number[];
   box_id?: number;
   user_id?: number;
   payment_method?: string;
@@ -154,6 +155,9 @@ export async function listSales(filters: {
   if (filters.event_id) {
     where.push('s.event_id = ?');
     params.push(filters.event_id);
+  } else if (filters.event_ids && filters.event_ids.length > 0) {
+    where.push('s.event_id IN (' + filters.event_ids.map(() => '?').join(', ') + ')');
+    params.push(...filters.event_ids);
   }
   if (filters.box_id) {
     where.push('s.box_id = ?');

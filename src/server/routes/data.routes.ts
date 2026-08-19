@@ -6,24 +6,35 @@ import * as prodSvc from '../services/products.service';
 import * as ticketsSvc from '../services/tickets.service';
 import * as boxesSvc from '../services/boxes.service';
 import * as usersSvc from '../services/auth.service';
+import { NotFound } from '../errors';
 import { parseNumber } from './helpers';
 
 const router = Router();
 router.use(requireAuth);
 
+async function gateEvent(req: AuthedRequest, eventId: number) {
+  await eventsSvc.assertEventAccess(req.user!, eventId);
+}
+
+async function gateEntity<T extends { event_id: number }>(req: AuthedRequest, id: number, getter: (id: number) => Promise<T | undefined>) {
+  const entity = await getter(id);
+  if (!entity) throw NotFound('No encontrado');
+  await eventsSvc.assertEventAccess(req.user!, entity.event_id);
+}
+
 // ----- Users (superadmin: admins; superadmin/admin: cajeros) -----
-router.get('/users', requireRole('superadmin', 'admin'), asyncHandler(async (req, res) => {
-  res.json(await usersSvc.listUsers(req.user!.role));
+router.get('/users', requireRole('superadmin', 'admin'), asyncHandler(async (req: AuthedRequest, res) => {
+  res.json(await usersSvc.listUsers(req.user!));
 }));
 
 router.post('/users', requireRole('superadmin', 'admin'), async (req: AuthedRequest, res, next) => {
   try {
-    const { username, name, role, password, pin, pos_categories, pos_tickets } = req.body;
+    const { username, name, role, password, pin, pos_categories, pos_tickets, owner_id } = req.body;
     if (req.user!.role !== 'superadmin' && role !== 'cajero') {
       res.status(403).json({ error: 'Solo el superadministrador puede crear administradores', code: 'FORBIDDEN' });
       return;
     }
-    const id = await usersSvc.createUser({ username, name, role, password, pin, pos_categories, pos_tickets }, req.user!.role);
+    const id = await usersSvc.createUser({ username, name, role, password, pin, pos_categories, pos_tickets, owner_id }, req.user!);
     res.json({ id });
   } catch (e) {
     next(e);
@@ -33,7 +44,7 @@ router.post('/users', requireRole('superadmin', 'admin'), async (req: AuthedRequ
 router.put('/users/:id', requireRole('superadmin', 'admin'), async (req: AuthedRequest, res, next) => {
   try {
     const id = parseNumber(req.params.id);
-    await usersSvc.updateUser(id, req.body, req.user!.role, req.user!.id);
+    await usersSvc.updateUser(id, req.body, req.user!);
     res.json({ ok: true });
   } catch (e) {
     next(e);
@@ -43,7 +54,7 @@ router.put('/users/:id', requireRole('superadmin', 'admin'), async (req: AuthedR
 router.delete('/users/:id', requireRole('superadmin', 'admin'), async (req: AuthedRequest, res, next) => {
   try {
     const id = parseNumber(req.params.id);
-    const result = await usersSvc.deleteUser(id, req.user!.role, req.user!.id);
+    const result = await usersSvc.deleteUser(id, req.user!);
     res.json({ result });
   } catch (e) {
     next(e);
@@ -51,12 +62,13 @@ router.delete('/users/:id', requireRole('superadmin', 'admin'), async (req: Auth
 });
 
 // ----- Events -----
-router.get('/events', asyncHandler(async (_req, res) => {
-  res.json(await eventsSvc.listEvents());
+router.get('/events', asyncHandler(async (req: AuthedRequest, res) => {
+  res.json(await eventsSvc.listEvents(req.user!));
 }));
 
-router.get('/events/:id', async (req, res, next) => {
+router.get('/events/:id', async (req: AuthedRequest, res, next) => {
   try {
+    await gateEvent(req, parseNumber(req.params.id));
     const ev = await eventsSvc.getEvent(parseNumber(req.params.id));
     if (!ev) {
       res.status(404).json({ error: 'Evento no encontrado' });
@@ -70,7 +82,7 @@ router.get('/events/:id', async (req, res, next) => {
 
 router.post('/events', requireRole('superadmin', 'admin'), async (req: AuthedRequest, res, next) => {
   try {
-    const ev = await eventsSvc.createEvent(req.body, req.user!.id);
+    const ev = await eventsSvc.createEvent(req.body, req.user!);
     res.json(ev);
   } catch (e) {
     next(e);
@@ -79,7 +91,8 @@ router.post('/events', requireRole('superadmin', 'admin'), async (req: AuthedReq
 
 router.put('/events/:id', requireRole('superadmin', 'admin'), async (req: AuthedRequest, res, next) => {
   try {
-    const ev = await eventsSvc.updateEvent(parseNumber(req.params.id), req.body, req.user!.id);
+    await gateEvent(req, parseNumber(req.params.id));
+    const ev = await eventsSvc.updateEvent(parseNumber(req.params.id), req.body, req.user!);
     res.json(ev);
   } catch (e) {
     next(e);
@@ -88,7 +101,7 @@ router.put('/events/:id', requireRole('superadmin', 'admin'), async (req: Authed
 
 router.delete('/events/:id', requireRole('superadmin', 'admin'), async (req: AuthedRequest, res, next) => {
   try {
-    await eventsSvc.deleteEvent(parseNumber(req.params.id), req.user!.id);
+    await eventsSvc.deleteEvent(parseNumber(req.params.id), req.user!);
     res.json({ ok: true });
   } catch (e) {
     next(e);
@@ -96,12 +109,18 @@ router.delete('/events/:id', requireRole('superadmin', 'admin'), async (req: Aut
 });
 
 // ----- Categories -----
-router.get('/events/:eventId/categories', asyncHandler(async (req, res) => {
-  res.json(await catsSvc.listCategories(parseNumber(req.params.eventId)));
-}));
+router.get('/events/:eventId/categories', async (req: AuthedRequest, res, next) => {
+  try {
+    await gateEvent(req, parseNumber(req.params.eventId));
+    res.json(await catsSvc.listCategories(parseNumber(req.params.eventId)));
+  } catch (e) {
+    next(e);
+  }
+});
 
 router.post('/events/:eventId/categories', requireRole('superadmin', 'admin'), async (req: AuthedRequest, res, next) => {
   try {
+    await gateEvent(req, parseNumber(req.params.eventId));
     res.json(await catsSvc.createCategory(parseNumber(req.params.eventId), req.body, req.user!.id));
   } catch (e) {
     next(e);
@@ -110,6 +129,7 @@ router.post('/events/:eventId/categories', requireRole('superadmin', 'admin'), a
 
 router.put('/categories/:id', requireRole('superadmin', 'admin'), async (req: AuthedRequest, res, next) => {
   try {
+    await gateEntity(req, parseNumber(req.params.id), catsSvc.getCategory);
     res.json(await catsSvc.updateCategory(parseNumber(req.params.id), req.body, req.user!.id));
   } catch (e) {
     next(e);
@@ -118,6 +138,7 @@ router.put('/categories/:id', requireRole('superadmin', 'admin'), async (req: Au
 
 router.delete('/categories/:id', requireRole('superadmin', 'admin'), async (req: AuthedRequest, res, next) => {
   try {
+    await gateEntity(req, parseNumber(req.params.id), catsSvc.getCategory);
     await catsSvc.deleteCategory(parseNumber(req.params.id), req.user!.id);
     res.json({ ok: true });
   } catch (e) {
@@ -126,12 +147,18 @@ router.delete('/categories/:id', requireRole('superadmin', 'admin'), async (req:
 });
 
 // ----- Products -----
-router.get('/events/:eventId/products', asyncHandler(async (req, res) => {
-  res.json(await prodSvc.listProducts(parseNumber(req.params.eventId)));
-}));
+router.get('/events/:eventId/products', async (req: AuthedRequest, res, next) => {
+  try {
+    await gateEvent(req, parseNumber(req.params.eventId));
+    res.json(await prodSvc.listProducts(parseNumber(req.params.eventId)));
+  } catch (e) {
+    next(e);
+  }
+});
 
 router.post('/events/:eventId/products', requireRole('superadmin', 'admin'), async (req: AuthedRequest, res, next) => {
   try {
+    await gateEvent(req, parseNumber(req.params.eventId));
     res.json(await prodSvc.createProduct(parseNumber(req.params.eventId), req.body, req.user!.id));
   } catch (e) {
     next(e);
@@ -140,6 +167,7 @@ router.post('/events/:eventId/products', requireRole('superadmin', 'admin'), asy
 
 router.put('/products/:id', requireRole('superadmin', 'admin'), async (req: AuthedRequest, res, next) => {
   try {
+    await gateEntity(req, parseNumber(req.params.id), prodSvc.getProduct);
     res.json(await prodSvc.updateProduct(parseNumber(req.params.id), req.body, req.user!.id));
   } catch (e) {
     next(e);
@@ -148,6 +176,7 @@ router.put('/products/:id', requireRole('superadmin', 'admin'), async (req: Auth
 
 router.post('/products/:id/duplicate', requireRole('superadmin', 'admin'), async (req: AuthedRequest, res, next) => {
   try {
+    await gateEntity(req, parseNumber(req.params.id), prodSvc.getProduct);
     res.json(await prodSvc.duplicateProduct(parseNumber(req.params.id), req.user!.id));
   } catch (e) {
     next(e);
@@ -156,6 +185,7 @@ router.post('/products/:id/duplicate', requireRole('superadmin', 'admin'), async
 
 router.delete('/products/:id', requireRole('superadmin', 'admin'), async (req: AuthedRequest, res, next) => {
   try {
+    await gateEntity(req, parseNumber(req.params.id), prodSvc.getProduct);
     await prodSvc.deleteProduct(parseNumber(req.params.id), req.user!.id);
     res.json({ ok: true });
   } catch (e) {
@@ -164,12 +194,18 @@ router.delete('/products/:id', requireRole('superadmin', 'admin'), async (req: A
 });
 
 // ----- Ticket types -----
-router.get('/events/:eventId/tickets', asyncHandler(async (req, res) => {
-  res.json(await ticketsSvc.listTicketTypes(parseNumber(req.params.eventId)));
-}));
+router.get('/events/:eventId/tickets', async (req: AuthedRequest, res, next) => {
+  try {
+    await gateEvent(req, parseNumber(req.params.eventId));
+    res.json(await ticketsSvc.listTicketTypes(parseNumber(req.params.eventId)));
+  } catch (e) {
+    next(e);
+  }
+});
 
 router.post('/events/:eventId/tickets', requireRole('superadmin', 'admin'), async (req: AuthedRequest, res, next) => {
   try {
+    await gateEvent(req, parseNumber(req.params.eventId));
     res.json(await ticketsSvc.createTicketType(parseNumber(req.params.eventId), req.body, req.user!.id));
   } catch (e) {
     next(e);
@@ -178,6 +214,7 @@ router.post('/events/:eventId/tickets', requireRole('superadmin', 'admin'), asyn
 
 router.put('/tickets/:id', requireRole('superadmin', 'admin'), async (req: AuthedRequest, res, next) => {
   try {
+    await gateEntity(req, parseNumber(req.params.id), ticketsSvc.getTicketType);
     res.json(await ticketsSvc.updateTicketType(parseNumber(req.params.id), req.body, req.user!.id));
   } catch (e) {
     next(e);
@@ -186,6 +223,7 @@ router.put('/tickets/:id', requireRole('superadmin', 'admin'), async (req: Authe
 
 router.delete('/tickets/:id', requireRole('superadmin', 'admin'), async (req: AuthedRequest, res, next) => {
   try {
+    await gateEntity(req, parseNumber(req.params.id), ticketsSvc.getTicketType);
     await ticketsSvc.deleteTicketType(parseNumber(req.params.id), req.user!.id);
     res.json({ ok: true });
   } catch (e) {
@@ -193,17 +231,28 @@ router.delete('/tickets/:id', requireRole('superadmin', 'admin'), async (req: Au
   }
 });
 
-router.get('/events/:eventId/tickets/last-numbers', asyncHandler(async (req, res) => {
-  res.json(await ticketsSvc.lastTicketNumbers(parseNumber(req.params.eventId)));
-}));
+router.get('/events/:eventId/tickets/last-numbers', async (req: AuthedRequest, res, next) => {
+  try {
+    await gateEvent(req, parseNumber(req.params.eventId));
+    res.json(await ticketsSvc.lastTicketNumbers(parseNumber(req.params.eventId)));
+  } catch (e) {
+    next(e);
+  }
+});
 
 // ----- Boxes -----
-router.get('/events/:eventId/boxes', asyncHandler(async (req, res) => {
-  res.json(await boxesSvc.listBoxes(parseNumber(req.params.eventId)));
-}));
+router.get('/events/:eventId/boxes', async (req: AuthedRequest, res, next) => {
+  try {
+    await gateEvent(req, parseNumber(req.params.eventId));
+    res.json(await boxesSvc.listBoxes(parseNumber(req.params.eventId)));
+  } catch (e) {
+    next(e);
+  }
+});
 
 router.post('/events/:eventId/boxes', requireRole('superadmin', 'admin'), async (req: AuthedRequest, res, next) => {
   try {
+    await gateEvent(req, parseNumber(req.params.eventId));
     res.json(await boxesSvc.createBox(parseNumber(req.params.eventId), req.body.name ?? '', req.user!.id));
   } catch (e) {
     next(e);
@@ -212,6 +261,7 @@ router.post('/events/:eventId/boxes', requireRole('superadmin', 'admin'), async 
 
 router.put('/boxes/:id', requireRole('superadmin', 'admin'), async (req: AuthedRequest, res, next) => {
   try {
+    await gateEntity(req, parseNumber(req.params.id), boxesSvc.getBox);
     res.json(await boxesSvc.updateBox(parseNumber(req.params.id), req.body, req.user!.id));
   } catch (e) {
     next(e);
@@ -220,6 +270,7 @@ router.put('/boxes/:id', requireRole('superadmin', 'admin'), async (req: AuthedR
 
 router.delete('/boxes/:id', requireRole('superadmin', 'admin'), async (req: AuthedRequest, res, next) => {
   try {
+    await gateEntity(req, parseNumber(req.params.id), boxesSvc.getBox);
     await boxesSvc.deleteBox(parseNumber(req.params.id), req.user!.id);
     res.json({ ok: true });
   } catch (e) {

@@ -14,6 +14,7 @@ export interface User {
   last_login_at: string | null;
   pos_categories?: string | null;
   pos_tickets?: number | null;
+  owner_id?: number | null;
 }
 
 export interface Event {
@@ -24,6 +25,7 @@ export interface Event {
   start_date: string;
   end_date: string;
   active: number;
+  owner_id?: number | null;
   created_at: string;
 }
 
@@ -190,6 +192,7 @@ export interface SessionUser {
   role: Role;
   pos_categories?: string | null;
   pos_tickets?: number | null;
+  owner_id?: number | null;
 }
 
 export interface AppSettings {

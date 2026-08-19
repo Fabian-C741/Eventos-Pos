@@ -78,12 +78,15 @@ export async function closeBox(closeId: number, userId: number, declaredByPaymen
   return (await getRow<Close>('SELECT * FROM closes WHERE id = ?', closeId))!;
 }
 
-export async function listCloses(filters: { event_id?: number; box_id?: number; status?: string }): Promise<Close[]> {
+export async function listCloses(filters: { event_id?: number; event_ids?: number[]; box_id?: number; status?: string }): Promise<Close[]> {
   const where: string[] = [];
   const params: unknown[] = [];
   if (filters.event_id) {
     where.push('c.event_id = ?');
     params.push(filters.event_id);
+  } else if (filters.event_ids && filters.event_ids.length > 0) {
+    where.push('c.event_id IN (' + filters.event_ids.map(() => '?').join(', ') + ')');
+    params.push(...filters.event_ids);
   }
   if (filters.box_id) {
     where.push('c.box_id = ?');

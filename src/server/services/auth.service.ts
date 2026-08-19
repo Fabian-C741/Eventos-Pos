@@ -128,7 +128,7 @@ async function createSession(user: User, device: string): Promise<{ token: strin
 export async function validateSession(token: string): Promise<User | null> {
   if (!token) return null;
   const row = await getRow<User>(
-    `SELECT u.id, u.username, u.name, u.role, u.active, u.created_at, u.last_login_at, u.pos_categories, u.pos_tickets
+    `SELECT u.id, u.username, u.name, u.role, u.active, u.created_at, u.last_login_at, u.pos_categories, u.pos_tickets, u.owner_id
      FROM sessions s JOIN users u ON u.id = s.user_id
      WHERE s.token = ? AND s.expires_at > ?`,
     token,
@@ -147,11 +147,17 @@ export async function cleanupSessions() {
   await exec('DELETE FROM sessions WHERE expires_at <= ?', new Date().toISOString());
 }
 
-export async function listUsers(actorRole: Role): Promise<User[]> {
-  const filter = actorRole === 'superadmin' ? '' : "WHERE role IN ('admin','cajero')";
+export async function listUsers(actor: User): Promise<User[]> {
+  let filter = '';
+  const params: unknown[] = [];
+  if (actor.role === 'admin') {
+    filter = 'WHERE role = ? AND owner_id = ?';
+    params.push('cajero', actor.id);
+  }
   return allRows<User>(
-    `SELECT id, username, name, role, active, pos_categories, pos_tickets, created_at, last_login_at
+    `SELECT id, username, name, role, active, pos_categories, pos_tickets, owner_id, created_at, last_login_at
      FROM users ${filter} ORDER BY CASE role WHEN 'superadmin' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, name`,
+    ...params,
   );
 }
 
@@ -163,14 +169,29 @@ export async function createUser(input: {
   pin?: string;
   pos_categories?: string;
   pos_tickets?: number;
-}, actorRole: Role): Promise<number> {
+  owner_id?: number | null;
+}, actor: User): Promise<number> {
   const { username, name, role } = input;
   const usernameNorm = username.trim().toLowerCase();
   if (!usernameNorm) throw BadRequest('El usuario es obligatorio');
-  if (role === 'superadmin' && actorRole !== 'superadmin') throw BadRequest('Solo el superadministrador puede crear administradores');
-  if (role === 'admin' && actorRole !== 'superadmin') throw BadRequest('Solo el superadministrador puede crear administradores');
+  if (role === 'superadmin' && actor.role !== 'superadmin') throw BadRequest('Solo el superadministrador puede crear administradores');
+  if (role === 'admin' && actor.role !== 'superadmin') throw BadRequest('Solo el superadministrador puede crear administradores');
   if (await getRow('SELECT id FROM users WHERE username = ?', usernameNorm)) {
     throw BadRequest('Ese usuario ya existe');
+  }
+  let ownerId: number | null;
+  if (role === 'cajero') {
+    if (actor.role === 'admin') {
+      ownerId = actor.id;
+    } else {
+      ownerId = input.owner_id ?? null;
+    }
+    if (ownerId !== null) {
+      const owner = await getRow<{ id: number }>('SELECT id FROM users WHERE id = ? AND role = ?', ownerId, 'admin');
+      if (!owner) throw BadRequest('El cajero debe pertenecer a un administrador');
+    }
+  } else {
+    ownerId = null;
   }
   let pwd: string;
   if (role === 'cajero') {
@@ -182,22 +203,27 @@ export async function createUser(input: {
     pwd = hashPassword(input.password);
   }
   const res = await exec(
-    'INSERT INTO users (username, password_hash, role, name, pos_categories, pos_tickets) VALUES (?, ?, ?, ?, ?, ?)',
+    'INSERT INTO users (username, password_hash, role, name, pos_categories, pos_tickets, owner_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
     usernameNorm,
     pwd,
     role,
     name.trim() || usernameNorm,
     role === 'cajero' ? input.pos_categories ?? null : null,
     role === 'cajero' ? (input.pos_tickets ?? 1) : 1,
+    ownerId,
   );
   return res.lastInsertRowid;
 }
 
-export async function updateUser(id: number, input: { name?: string; active?: number; password?: string; pin?: string; pos_categories?: string; pos_tickets?: number }, actorRole: Role, actorId: number) {
+export async function updateUser(id: number, input: { name?: string; active?: number; password?: string; pin?: string; pos_categories?: string; pos_tickets?: number; owner_id?: number | null }, actor: User) {
   const target = await getRow<User>('SELECT * FROM users WHERE id = ?', id);
   if (!target) throw BadRequest('Usuario no encontrado');
-  if (target.role === 'superadmin' && target.id !== actorId) throw BadRequest('No podés modificar al superadministrador');
-  if (target.role === 'admin' && actorRole !== 'superadmin') throw BadRequest('Solo el superadministrador puede modificar administradores');
+  if (target.role === 'superadmin' && target.id !== actor.id) throw BadRequest('No podés modificar al superadministrador');
+  if (actor.role === 'admin') {
+    if (target.role !== 'cajero' || target.owner_id !== actor.id) throw BadRequest('Solo podés modificar a tus cajeros');
+  } else if (target.role === 'admin' && actor.role !== 'superadmin') {
+    throw BadRequest('Solo el superadministrador puede modificar administradores');
+  }
   if (input.name !== undefined) await exec('UPDATE users SET name = ? WHERE id = ?', input.name.trim(), id);
   if (input.active !== undefined) await exec('UPDATE users SET active = ? WHERE id = ?', input.active ? 1 : 0, id);
   if (input.password && target.role !== 'cajero') {
@@ -210,14 +236,26 @@ export async function updateUser(id: number, input: { name?: string; active?: nu
   }
   if (input.pos_categories !== undefined) await exec('UPDATE users SET pos_categories = ? WHERE id = ?', input.pos_categories, id);
   if (input.pos_tickets !== undefined) await exec('UPDATE users SET pos_tickets = ? WHERE id = ?', input.pos_tickets ? 1 : 0, id);
+  if (input.owner_id !== undefined && actor.role === 'superadmin' && target.role === 'cajero') {
+    const ownerId = input.owner_id ?? null;
+    if (ownerId !== null) {
+      const owner = await getRow<{ id: number }>('SELECT id FROM users WHERE id = ? AND role = ?', ownerId, 'admin');
+      if (!owner) throw BadRequest('El cajero debe pertenecer a un administrador');
+    }
+    await exec('UPDATE users SET owner_id = ? WHERE id = ?', ownerId, id);
+  }
   return true;
 }
 
-export async function deleteUser(id: number, actorRole: Role, actorId: number) {
+export async function deleteUser(id: number, actor: User) {
   const target = await getRow<User>('SELECT * FROM users WHERE id = ?', id);
   if (!target) throw BadRequest('Usuario no encontrado');
   if (target.role === 'superadmin') throw BadRequest('No se puede eliminar al superadministrador');
-  if (target.role === 'admin' && actorRole !== 'superadmin') throw BadRequest('Solo el superadministrador puede eliminar administradores');
+  if (actor.role === 'admin') {
+    if (target.role !== 'cajero' || target.owner_id !== actor.id) throw BadRequest('Solo podés eliminar a tus cajeros');
+  } else if (target.role === 'admin' && actor.role !== 'superadmin') {
+    throw BadRequest('Solo el superadministrador puede eliminar administradores');
+  }
   const sales = await getRow<{ c: number }>('SELECT COUNT(*) AS c FROM sales WHERE user_id = ?', id);
   if ((sales?.c ?? 0) > 0) {
     await exec('UPDATE users SET active = 0 WHERE id = ?', id);
@@ -229,7 +267,7 @@ export async function deleteUser(id: number, actorRole: Role, actorId: number) {
 
 export async function listActiveCashiers(): Promise<User[]> {
   return allRows<User>(
-    `SELECT id, username, name, role, active, pos_categories, pos_tickets, created_at, last_login_at
+    `SELECT id, username, name, role, active, pos_categories, pos_tickets, owner_id, created_at, last_login_at
      FROM users WHERE role = 'cajero' AND active = 1 ORDER BY name`,
   );
 }

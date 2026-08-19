@@ -161,6 +161,9 @@ async function initDb(config = {}) {
   const userCols = new Set(db.prepare("PRAGMA table_info(users)").all().map((c) => c.name));
   if (!userCols.has("pos_categories")) db.exec("ALTER TABLE users ADD COLUMN pos_categories TEXT");
   if (!userCols.has("pos_tickets")) db.exec("ALTER TABLE users ADD COLUMN pos_tickets INTEGER NOT NULL DEFAULT 1");
+  if (!userCols.has("owner_id")) db.exec("ALTER TABLE users ADD COLUMN owner_id INTEGER");
+  const eventCols = new Set(db.prepare("PRAGMA table_info(events)").all().map((c) => c.name));
+  if (!eventCols.has("owner_id")) db.exec("ALTER TABLE events ADD COLUMN owner_id INTEGER");
   logger.info("db", `Base de datos inicializada en ${dbPath}`);
   return db;
 }
@@ -367,7 +370,7 @@ async function initDb2(_config = {}) {
   });
   try {
     await sql.unsafe(
-      "ALTER TABLE users ADD COLUMN IF NOT EXISTS pos_categories TEXT; ALTER TABLE users ADD COLUMN IF NOT EXISTS pos_tickets INTEGER NOT NULL DEFAULT 1;"
+      "ALTER TABLE users ADD COLUMN IF NOT EXISTS pos_categories TEXT; ALTER TABLE users ADD COLUMN IF NOT EXISTS pos_tickets INTEGER NOT NULL DEFAULT 1; ALTER TABLE users ADD COLUMN IF NOT EXISTS owner_id INTEGER; ALTER TABLE events ADD COLUMN IF NOT EXISTS owner_id INTEGER;"
     );
   } catch {
   }
@@ -542,6 +545,9 @@ var init_db = __esm({
 function BadRequest(message) {
   return Object.assign(new Error(message), { statusCode: 400 });
 }
+function NotFound(message) {
+  return Object.assign(new Error(message), { statusCode: 404 });
+}
 var init_errors = __esm({
   "src/server/errors.ts"() {
     "use strict";
@@ -685,7 +691,7 @@ async function createSession(user, device) {
 async function validateSession(token) {
   if (!token) return null;
   const row = await getRow3(
-    `SELECT u.id, u.username, u.name, u.role, u.active, u.created_at, u.last_login_at, u.pos_categories, u.pos_tickets
+    `SELECT u.id, u.username, u.name, u.role, u.active, u.created_at, u.last_login_at, u.pos_categories, u.pos_tickets, u.owner_id
      FROM sessions s JOIN users u ON u.id = s.user_id
      WHERE s.token = ? AND s.expires_at > ?`,
     token,
@@ -698,21 +704,41 @@ async function validateSession(token) {
 async function logout(token) {
   if (token) await exec3("DELETE FROM sessions WHERE token = ?", token);
 }
-async function listUsers(actorRole) {
-  const filter = actorRole === "superadmin" ? "" : "WHERE role IN ('admin','cajero')";
+async function listUsers(actor) {
+  let filter = "";
+  const params = [];
+  if (actor.role === "admin") {
+    filter = "WHERE role = ? AND owner_id = ?";
+    params.push("cajero", actor.id);
+  }
   return allRows3(
-    `SELECT id, username, name, role, active, pos_categories, pos_tickets, created_at, last_login_at
-     FROM users ${filter} ORDER BY CASE role WHEN 'superadmin' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, name`
+    `SELECT id, username, name, role, active, pos_categories, pos_tickets, owner_id, created_at, last_login_at
+     FROM users ${filter} ORDER BY CASE role WHEN 'superadmin' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, name`,
+    ...params
   );
 }
-async function createUser(input, actorRole) {
+async function createUser(input, actor) {
   const { username, name, role } = input;
   const usernameNorm = username.trim().toLowerCase();
   if (!usernameNorm) throw BadRequest("El usuario es obligatorio");
-  if (role === "superadmin" && actorRole !== "superadmin") throw BadRequest("Solo el superadministrador puede crear administradores");
-  if (role === "admin" && actorRole !== "superadmin") throw BadRequest("Solo el superadministrador puede crear administradores");
+  if (role === "superadmin" && actor.role !== "superadmin") throw BadRequest("Solo el superadministrador puede crear administradores");
+  if (role === "admin" && actor.role !== "superadmin") throw BadRequest("Solo el superadministrador puede crear administradores");
   if (await getRow3("SELECT id FROM users WHERE username = ?", usernameNorm)) {
     throw BadRequest("Ese usuario ya existe");
+  }
+  let ownerId;
+  if (role === "cajero") {
+    if (actor.role === "admin") {
+      ownerId = actor.id;
+    } else {
+      ownerId = input.owner_id ?? null;
+    }
+    if (ownerId !== null) {
+      const owner = await getRow3("SELECT id FROM users WHERE id = ? AND role = ?", ownerId, "admin");
+      if (!owner) throw BadRequest("El cajero debe pertenecer a un administrador");
+    }
+  } else {
+    ownerId = null;
   }
   let pwd;
   if (role === "cajero") {
@@ -724,21 +750,26 @@ async function createUser(input, actorRole) {
     pwd = hashPassword(input.password);
   }
   const res = await exec3(
-    "INSERT INTO users (username, password_hash, role, name, pos_categories, pos_tickets) VALUES (?, ?, ?, ?, ?, ?)",
+    "INSERT INTO users (username, password_hash, role, name, pos_categories, pos_tickets, owner_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
     usernameNorm,
     pwd,
     role,
     name.trim() || usernameNorm,
     role === "cajero" ? input.pos_categories ?? null : null,
-    role === "cajero" ? input.pos_tickets ?? 1 : 1
+    role === "cajero" ? input.pos_tickets ?? 1 : 1,
+    ownerId
   );
   return res.lastInsertRowid;
 }
-async function updateUser(id, input, actorRole, actorId) {
+async function updateUser(id, input, actor) {
   const target = await getRow3("SELECT * FROM users WHERE id = ?", id);
   if (!target) throw BadRequest("Usuario no encontrado");
-  if (target.role === "superadmin" && target.id !== actorId) throw BadRequest("No pod\xE9s modificar al superadministrador");
-  if (target.role === "admin" && actorRole !== "superadmin") throw BadRequest("Solo el superadministrador puede modificar administradores");
+  if (target.role === "superadmin" && target.id !== actor.id) throw BadRequest("No pod\xE9s modificar al superadministrador");
+  if (actor.role === "admin") {
+    if (target.role !== "cajero" || target.owner_id !== actor.id) throw BadRequest("Solo pod\xE9s modificar a tus cajeros");
+  } else if (target.role === "admin" && actor.role !== "superadmin") {
+    throw BadRequest("Solo el superadministrador puede modificar administradores");
+  }
   if (input.name !== void 0) await exec3("UPDATE users SET name = ? WHERE id = ?", input.name.trim(), id);
   if (input.active !== void 0) await exec3("UPDATE users SET active = ? WHERE id = ?", input.active ? 1 : 0, id);
   if (input.password && target.role !== "cajero") {
@@ -751,13 +782,25 @@ async function updateUser(id, input, actorRole, actorId) {
   }
   if (input.pos_categories !== void 0) await exec3("UPDATE users SET pos_categories = ? WHERE id = ?", input.pos_categories, id);
   if (input.pos_tickets !== void 0) await exec3("UPDATE users SET pos_tickets = ? WHERE id = ?", input.pos_tickets ? 1 : 0, id);
+  if (input.owner_id !== void 0 && actor.role === "superadmin" && target.role === "cajero") {
+    const ownerId = input.owner_id ?? null;
+    if (ownerId !== null) {
+      const owner = await getRow3("SELECT id FROM users WHERE id = ? AND role = ?", ownerId, "admin");
+      if (!owner) throw BadRequest("El cajero debe pertenecer a un administrador");
+    }
+    await exec3("UPDATE users SET owner_id = ? WHERE id = ?", ownerId, id);
+  }
   return true;
 }
-async function deleteUser(id, actorRole, actorId) {
+async function deleteUser(id, actor) {
   const target = await getRow3("SELECT * FROM users WHERE id = ?", id);
   if (!target) throw BadRequest("Usuario no encontrado");
   if (target.role === "superadmin") throw BadRequest("No se puede eliminar al superadministrador");
-  if (target.role === "admin" && actorRole !== "superadmin") throw BadRequest("Solo el superadministrador puede eliminar administradores");
+  if (actor.role === "admin") {
+    if (target.role !== "cajero" || target.owner_id !== actor.id) throw BadRequest("Solo pod\xE9s eliminar a tus cajeros");
+  } else if (target.role === "admin" && actor.role !== "superadmin") {
+    throw BadRequest("Solo el superadministrador puede eliminar administradores");
+  }
   const sales = await getRow3("SELECT COUNT(*) AS c FROM sales WHERE user_id = ?", id);
   if ((sales?.c ?? 0) > 0) {
     await exec3("UPDATE users SET active = 0 WHERE id = ?", id);
@@ -768,7 +811,7 @@ async function deleteUser(id, actorRole, actorId) {
 }
 async function listActiveCashiers() {
   return allRows3(
-    `SELECT id, username, name, role, active, pos_categories, pos_tickets, created_at, last_login_at
+    `SELECT id, username, name, role, active, pos_categories, pos_tickets, owner_id, created_at, last_login_at
      FROM users WHERE role = 'cajero' AND active = 1 ORDER BY name`
   );
 }
@@ -1101,46 +1144,96 @@ var init_auth_routes = __esm({
 });
 
 // src/server/services/events.service.ts
-async function listEvents(includeInactive = true) {
-  const sql2 = includeInactive ? "SELECT * FROM events ORDER BY active DESC, start_date DESC, name" : "SELECT * FROM events WHERE active = 1 ORDER BY name";
-  return allRows3(sql2);
+function tenantScope(actor) {
+  if (actor.role === "superadmin") return "all";
+  if (actor.role === "admin") return actor.id;
+  return actor.owner_id ?? "none";
+}
+async function canAccessEvent(actor, eventId) {
+  const scope = tenantScope(actor);
+  if (scope === "none") return false;
+  if (scope === "all") {
+    return !!await getRow3("SELECT id FROM events WHERE id = ?", eventId);
+  }
+  return !!await getRow3("SELECT id FROM events WHERE id = ? AND owner_id = ?", eventId, scope);
+}
+async function assertEventAccess(actor, eventId) {
+  if (!await canAccessEvent(actor, eventId)) throw NotFound("Evento no encontrado");
+}
+async function listEvents(actor, includeInactive = true) {
+  const scope = tenantScope(actor);
+  if (scope === "none") return [];
+  const clauses = [];
+  const params = [];
+  if (scope !== "all") {
+    clauses.push("owner_id = ?");
+    params.push(scope);
+  }
+  if (!includeInactive) clauses.push("active = 1");
+  const whereSql = clauses.length ? "WHERE " + clauses.join(" AND ") : "";
+  const sql2 = `SELECT * FROM events ${whereSql} ORDER BY active DESC, start_date DESC, name`;
+  return allRows3(sql2, ...params);
 }
 async function getEvent(id) {
   return getRow3("SELECT * FROM events WHERE id = ?", id);
 }
-async function createEvent(input, userId) {
+async function createEvent(input, actor) {
   const name = input.name.trim();
   if (!name) throw BadRequest("El nombre del evento es obligatorio");
+  let ownerId;
+  if (actor.role === "superadmin") {
+    ownerId = input.owner_id ?? null;
+  } else {
+    ownerId = actor.id;
+  }
+  if (ownerId !== null) {
+    const owner = await getRow3("SELECT id FROM users WHERE id = ? AND role = ?", ownerId, "admin");
+    if (!owner) throw BadRequest("El due\xF1o del evento debe ser un administrador");
+  }
   const res = await exec3(
-    "INSERT INTO events (name, description, venue, start_date, end_date, active) VALUES (?, ?, ?, ?, ?, ?)",
+    "INSERT INTO events (name, description, venue, start_date, end_date, active, owner_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
     name,
     input.description ?? "",
     input.venue ?? "",
     input.start_date ?? "",
     input.end_date ?? "",
-    input.active === 0 ? 0 : 1
+    input.active === 0 ? 0 : 1,
+    ownerId
   );
   const id = res.lastInsertRowid;
-  await audit(userId, "create", "event", id, { name });
+  await audit(actor.id, "create", "event", id, { name, owner_id: ownerId });
   return getEvent(id);
 }
-async function updateEvent(id, input, userId) {
+async function updateEvent(id, input, actor) {
   const cur = await getEvent(id);
-  if (!cur) throw BadRequest("Evento no encontrado");
+  if (!cur) throw NotFound("Evento no encontrado");
+  await assertEventAccess(actor, id);
+  let ownerId = cur.owner_id ?? null;
+  if (actor.role === "superadmin" && input.owner_id !== void 0) {
+    ownerId = input.owner_id ?? null;
+    if (ownerId !== null) {
+      const owner = await getRow3("SELECT id FROM users WHERE id = ? AND role = ?", ownerId, "admin");
+      if (!owner) throw BadRequest("El due\xF1o del evento debe ser un administrador");
+    }
+  }
   await exec3(
-    `UPDATE events SET name = ?, description = ?, venue = ?, start_date = ?, end_date = ?, active = ? WHERE id = ?`,
+    `UPDATE events SET name = ?, description = ?, venue = ?, start_date = ?, end_date = ?, active = ?, owner_id = ? WHERE id = ?`,
     input.name?.trim() ?? cur.name,
     input.description ?? cur.description,
     input.venue ?? cur.venue,
     input.start_date ?? cur.start_date,
     input.end_date ?? cur.end_date,
     input.active === void 0 ? cur.active : input.active ? 1 : 0,
+    ownerId,
     id
   );
-  await audit(userId, "update", "event", id, { name: input.name });
+  await audit(actor.id, "update", "event", id, { name: input.name, owner_id: input.owner_id });
   return getEvent(id);
 }
-async function deleteEvent(id, userId) {
+async function deleteEvent(id, actor) {
+  const cur = await getEvent(id);
+  if (!cur) throw NotFound("Evento no encontrado");
+  await assertEventAccess(actor, id);
   await runInTransaction3(async () => {
     await exec3("DELETE FROM sale_tickets WHERE sale_id IN (SELECT id FROM sales WHERE event_id = ?)", id);
     await exec3("DELETE FROM tickets WHERE sale_id IN (SELECT id FROM sales WHERE event_id = ?)", id);
@@ -1154,7 +1247,7 @@ async function deleteEvent(id, userId) {
     await exec3("DELETE FROM ticket_types WHERE event_id = ?", id);
     await exec3("DELETE FROM events WHERE id = ?", id);
   });
-  await audit(userId, "delete", "event", id, {});
+  await audit(actor.id, "delete", "event", id, {});
   return true;
 }
 var init_events_service = __esm({
@@ -1172,6 +1265,9 @@ async function listCategories(eventId) {
     "SELECT * FROM categories WHERE event_id = ? ORDER BY sort_order, name",
     eventId
   );
+}
+async function getCategory(id) {
+  return getRow3("SELECT * FROM categories WHERE id = ?", id);
 }
 async function createCategory(eventId, input, userId) {
   const name = input.name.trim();
@@ -1453,6 +1549,14 @@ var init_helpers = __esm({
 });
 
 // src/server/routes/data.routes.ts
+async function gateEvent(req, eventId) {
+  await assertEventAccess(req.user, eventId);
+}
+async function gateEntity(req, id, getter) {
+  const entity = await getter(id);
+  if (!entity) throw NotFound("No encontrado");
+  await assertEventAccess(req.user, entity.event_id);
+}
 var import_express2, router2, data_routes_default;
 var init_data_routes = __esm({
   "src/server/routes/data.routes.ts"() {
@@ -1465,20 +1569,21 @@ var init_data_routes = __esm({
     init_tickets_service();
     init_boxes_service();
     init_auth_service();
+    init_errors();
     init_helpers();
     router2 = (0, import_express2.Router)();
     router2.use(requireAuth);
     router2.get("/users", requireRole("superadmin", "admin"), asyncHandler(async (req, res) => {
-      res.json(await listUsers(req.user.role));
+      res.json(await listUsers(req.user));
     }));
     router2.post("/users", requireRole("superadmin", "admin"), async (req, res, next) => {
       try {
-        const { username, name, role, password, pin, pos_categories, pos_tickets } = req.body;
+        const { username, name, role, password, pin, pos_categories, pos_tickets, owner_id } = req.body;
         if (req.user.role !== "superadmin" && role !== "cajero") {
           res.status(403).json({ error: "Solo el superadministrador puede crear administradores", code: "FORBIDDEN" });
           return;
         }
-        const id = await createUser({ username, name, role, password, pin, pos_categories, pos_tickets }, req.user.role);
+        const id = await createUser({ username, name, role, password, pin, pos_categories, pos_tickets, owner_id }, req.user);
         res.json({ id });
       } catch (e) {
         next(e);
@@ -1487,7 +1592,7 @@ var init_data_routes = __esm({
     router2.put("/users/:id", requireRole("superadmin", "admin"), async (req, res, next) => {
       try {
         const id = parseNumber(req.params.id);
-        await updateUser(id, req.body, req.user.role, req.user.id);
+        await updateUser(id, req.body, req.user);
         res.json({ ok: true });
       } catch (e) {
         next(e);
@@ -1496,17 +1601,18 @@ var init_data_routes = __esm({
     router2.delete("/users/:id", requireRole("superadmin", "admin"), async (req, res, next) => {
       try {
         const id = parseNumber(req.params.id);
-        const result = await deleteUser(id, req.user.role, req.user.id);
+        const result = await deleteUser(id, req.user);
         res.json({ result });
       } catch (e) {
         next(e);
       }
     });
-    router2.get("/events", asyncHandler(async (_req, res) => {
-      res.json(await listEvents());
+    router2.get("/events", asyncHandler(async (req, res) => {
+      res.json(await listEvents(req.user));
     }));
     router2.get("/events/:id", async (req, res, next) => {
       try {
+        await gateEvent(req, parseNumber(req.params.id));
         const ev = await getEvent(parseNumber(req.params.id));
         if (!ev) {
           res.status(404).json({ error: "Evento no encontrado" });
@@ -1519,7 +1625,7 @@ var init_data_routes = __esm({
     });
     router2.post("/events", requireRole("superadmin", "admin"), async (req, res, next) => {
       try {
-        const ev = await createEvent(req.body, req.user.id);
+        const ev = await createEvent(req.body, req.user);
         res.json(ev);
       } catch (e) {
         next(e);
@@ -1527,7 +1633,8 @@ var init_data_routes = __esm({
     });
     router2.put("/events/:id", requireRole("superadmin", "admin"), async (req, res, next) => {
       try {
-        const ev = await updateEvent(parseNumber(req.params.id), req.body, req.user.id);
+        await gateEvent(req, parseNumber(req.params.id));
+        const ev = await updateEvent(parseNumber(req.params.id), req.body, req.user);
         res.json(ev);
       } catch (e) {
         next(e);
@@ -1535,17 +1642,23 @@ var init_data_routes = __esm({
     });
     router2.delete("/events/:id", requireRole("superadmin", "admin"), async (req, res, next) => {
       try {
-        await deleteEvent(parseNumber(req.params.id), req.user.id);
+        await deleteEvent(parseNumber(req.params.id), req.user);
         res.json({ ok: true });
       } catch (e) {
         next(e);
       }
     });
-    router2.get("/events/:eventId/categories", asyncHandler(async (req, res) => {
-      res.json(await listCategories(parseNumber(req.params.eventId)));
-    }));
+    router2.get("/events/:eventId/categories", async (req, res, next) => {
+      try {
+        await gateEvent(req, parseNumber(req.params.eventId));
+        res.json(await listCategories(parseNumber(req.params.eventId)));
+      } catch (e) {
+        next(e);
+      }
+    });
     router2.post("/events/:eventId/categories", requireRole("superadmin", "admin"), async (req, res, next) => {
       try {
+        await gateEvent(req, parseNumber(req.params.eventId));
         res.json(await createCategory(parseNumber(req.params.eventId), req.body, req.user.id));
       } catch (e) {
         next(e);
@@ -1553,6 +1666,7 @@ var init_data_routes = __esm({
     });
     router2.put("/categories/:id", requireRole("superadmin", "admin"), async (req, res, next) => {
       try {
+        await gateEntity(req, parseNumber(req.params.id), getCategory);
         res.json(await updateCategory(parseNumber(req.params.id), req.body, req.user.id));
       } catch (e) {
         next(e);
@@ -1560,17 +1674,24 @@ var init_data_routes = __esm({
     });
     router2.delete("/categories/:id", requireRole("superadmin", "admin"), async (req, res, next) => {
       try {
+        await gateEntity(req, parseNumber(req.params.id), getCategory);
         await deleteCategory(parseNumber(req.params.id), req.user.id);
         res.json({ ok: true });
       } catch (e) {
         next(e);
       }
     });
-    router2.get("/events/:eventId/products", asyncHandler(async (req, res) => {
-      res.json(await listProducts(parseNumber(req.params.eventId)));
-    }));
+    router2.get("/events/:eventId/products", async (req, res, next) => {
+      try {
+        await gateEvent(req, parseNumber(req.params.eventId));
+        res.json(await listProducts(parseNumber(req.params.eventId)));
+      } catch (e) {
+        next(e);
+      }
+    });
     router2.post("/events/:eventId/products", requireRole("superadmin", "admin"), async (req, res, next) => {
       try {
+        await gateEvent(req, parseNumber(req.params.eventId));
         res.json(await createProduct(parseNumber(req.params.eventId), req.body, req.user.id));
       } catch (e) {
         next(e);
@@ -1578,6 +1699,7 @@ var init_data_routes = __esm({
     });
     router2.put("/products/:id", requireRole("superadmin", "admin"), async (req, res, next) => {
       try {
+        await gateEntity(req, parseNumber(req.params.id), getProduct);
         res.json(await updateProduct(parseNumber(req.params.id), req.body, req.user.id));
       } catch (e) {
         next(e);
@@ -1585,6 +1707,7 @@ var init_data_routes = __esm({
     });
     router2.post("/products/:id/duplicate", requireRole("superadmin", "admin"), async (req, res, next) => {
       try {
+        await gateEntity(req, parseNumber(req.params.id), getProduct);
         res.json(await duplicateProduct(parseNumber(req.params.id), req.user.id));
       } catch (e) {
         next(e);
@@ -1592,17 +1715,24 @@ var init_data_routes = __esm({
     });
     router2.delete("/products/:id", requireRole("superadmin", "admin"), async (req, res, next) => {
       try {
+        await gateEntity(req, parseNumber(req.params.id), getProduct);
         await deleteProduct(parseNumber(req.params.id), req.user.id);
         res.json({ ok: true });
       } catch (e) {
         next(e);
       }
     });
-    router2.get("/events/:eventId/tickets", asyncHandler(async (req, res) => {
-      res.json(await listTicketTypes(parseNumber(req.params.eventId)));
-    }));
+    router2.get("/events/:eventId/tickets", async (req, res, next) => {
+      try {
+        await gateEvent(req, parseNumber(req.params.eventId));
+        res.json(await listTicketTypes(parseNumber(req.params.eventId)));
+      } catch (e) {
+        next(e);
+      }
+    });
     router2.post("/events/:eventId/tickets", requireRole("superadmin", "admin"), async (req, res, next) => {
       try {
+        await gateEvent(req, parseNumber(req.params.eventId));
         res.json(await createTicketType(parseNumber(req.params.eventId), req.body, req.user.id));
       } catch (e) {
         next(e);
@@ -1610,6 +1740,7 @@ var init_data_routes = __esm({
     });
     router2.put("/tickets/:id", requireRole("superadmin", "admin"), async (req, res, next) => {
       try {
+        await gateEntity(req, parseNumber(req.params.id), getTicketType);
         res.json(await updateTicketType(parseNumber(req.params.id), req.body, req.user.id));
       } catch (e) {
         next(e);
@@ -1617,20 +1748,32 @@ var init_data_routes = __esm({
     });
     router2.delete("/tickets/:id", requireRole("superadmin", "admin"), async (req, res, next) => {
       try {
+        await gateEntity(req, parseNumber(req.params.id), getTicketType);
         await deleteTicketType(parseNumber(req.params.id), req.user.id);
         res.json({ ok: true });
       } catch (e) {
         next(e);
       }
     });
-    router2.get("/events/:eventId/tickets/last-numbers", asyncHandler(async (req, res) => {
-      res.json(await lastTicketNumbers(parseNumber(req.params.eventId)));
-    }));
-    router2.get("/events/:eventId/boxes", asyncHandler(async (req, res) => {
-      res.json(await listBoxes(parseNumber(req.params.eventId)));
-    }));
+    router2.get("/events/:eventId/tickets/last-numbers", async (req, res, next) => {
+      try {
+        await gateEvent(req, parseNumber(req.params.eventId));
+        res.json(await lastTicketNumbers(parseNumber(req.params.eventId)));
+      } catch (e) {
+        next(e);
+      }
+    });
+    router2.get("/events/:eventId/boxes", async (req, res, next) => {
+      try {
+        await gateEvent(req, parseNumber(req.params.eventId));
+        res.json(await listBoxes(parseNumber(req.params.eventId)));
+      } catch (e) {
+        next(e);
+      }
+    });
     router2.post("/events/:eventId/boxes", requireRole("superadmin", "admin"), async (req, res, next) => {
       try {
+        await gateEvent(req, parseNumber(req.params.eventId));
         res.json(await createBox(parseNumber(req.params.eventId), req.body.name ?? "", req.user.id));
       } catch (e) {
         next(e);
@@ -1638,6 +1781,7 @@ var init_data_routes = __esm({
     });
     router2.put("/boxes/:id", requireRole("superadmin", "admin"), async (req, res, next) => {
       try {
+        await gateEntity(req, parseNumber(req.params.id), getBox);
         res.json(await updateBox(parseNumber(req.params.id), req.body, req.user.id));
       } catch (e) {
         next(e);
@@ -1645,6 +1789,7 @@ var init_data_routes = __esm({
     });
     router2.delete("/boxes/:id", requireRole("superadmin", "admin"), async (req, res, next) => {
       try {
+        await gateEntity(req, parseNumber(req.params.id), getBox);
         await deleteBox(parseNumber(req.params.id), req.user.id);
         res.json({ ok: true });
       } catch (e) {
@@ -1758,6 +1903,9 @@ async function listSales(filters) {
   if (filters.event_id) {
     where.push("s.event_id = ?");
     params.push(filters.event_id);
+  } else if (filters.event_ids && filters.event_ids.length > 0) {
+    where.push("s.event_id IN (" + filters.event_ids.map(() => "?").join(", ") + ")");
+    params.push(...filters.event_ids);
   }
   if (filters.box_id) {
     where.push("s.box_id = ?");
@@ -1873,7 +2021,8 @@ var init_sales_service = __esm({
 });
 
 // src/server/routes/sales.routes.ts
-async function validateEventAccess(eventId) {
+async function validateEventAccess(req, eventId) {
+  await assertEventAccess(req.user, eventId);
   const ev = await getEvent(eventId);
   if (!ev) throw BadRequest("Evento no encontrado");
   if (ev.active !== 1) {
@@ -1897,7 +2046,7 @@ var init_sales_routes = __esm({
     router3.post("/", async (req, res, next) => {
       try {
         const eventId = parseNumber(req.body.event_id);
-        await validateEventAccess(eventId);
+        await validateEventAccess(req, eventId);
         const boxId = req.body.box_id ? parseNumber(req.body.box_id) : null;
         if (boxId) {
           const box = await getBox(boxId);
@@ -1920,8 +2069,27 @@ var init_sales_routes = __esm({
     });
     router3.get("/", asyncHandler(async (req, res) => {
       const q = req.query;
+      const eventId = parseOptionalInt(q.event_id);
+      if (eventId) {
+        await assertEventAccess(req.user, eventId);
+      }
+      let eventIds;
+      if (!eventId && req.user.role !== "superadmin") {
+        const tid = req.user.role === "admin" ? req.user.id : req.user.owner_id ?? null;
+        if (tid === null) {
+          res.json([]);
+          return;
+        }
+        const rows = await listEvents(req.user);
+        eventIds = rows.map((r) => r.id);
+        if (eventIds.length === 0) {
+          res.json([]);
+          return;
+        }
+      }
       const sales = await listSales({
-        event_id: parseOptionalInt(q.event_id),
+        event_id: eventId,
+        event_ids: eventIds,
         box_id: parseOptionalInt(q.box_id),
         user_id: parseOptionalInt(q.user_id),
         payment_method: q.payment_method,
@@ -1935,7 +2103,9 @@ var init_sales_routes = __esm({
     }));
     router3.get("/operation", async (req, res, next) => {
       try {
-        const op = await getOperationNumber(parseNumber(req.query.event_id));
+        const eventId = parseNumber(req.query.event_id);
+        await assertEventAccess(req.user, eventId);
+        const op = await getOperationNumber(eventId);
         res.json({ operation_number: op });
       } catch (e) {
         next(e);
@@ -1943,6 +2113,9 @@ var init_sales_routes = __esm({
     });
     router3.get("/box/:boxId/recent", async (req, res, next) => {
       try {
+        const box = await getBox(parseNumber(req.params.boxId));
+        if (!box) throw BadRequest("Caja no encontrada");
+        await assertEventAccess(req.user, box.event_id);
         res.json(await lastSalesForBox(parseNumber(req.params.boxId)));
       } catch (e) {
         next(e);
@@ -1950,13 +2123,17 @@ var init_sales_routes = __esm({
     });
     router3.get("/:id", async (req, res, next) => {
       try {
-        res.json(await getSaleDetail(parseNumber(req.params.id)));
+        const sale = await getSaleDetail(parseNumber(req.params.id));
+        await assertEventAccess(req.user, sale.event_id);
+        res.json(sale);
       } catch (e) {
         next(e);
       }
     });
     router3.post("/:id/void", requireRole("superadmin", "admin"), async (req, res, next) => {
       try {
+        const sale = await getSaleDetail(parseNumber(req.params.id));
+        await assertEventAccess(req.user, sale.event_id);
         const detail = await voidSale(parseNumber(req.params.id), req.user.id, String(req.body.reason ?? ""), req.device);
         res.json(detail);
       } catch (e) {
@@ -2053,6 +2230,9 @@ async function listCloses(filters) {
   if (filters.event_id) {
     where.push("c.event_id = ?");
     params.push(filters.event_id);
+  } else if (filters.event_ids && filters.event_ids.length > 0) {
+    where.push("c.event_id IN (" + filters.event_ids.map(() => "?").join(", ") + ")");
+    params.push(...filters.event_ids);
   }
   if (filters.box_id) {
     where.push("c.box_id = ?");
@@ -2097,6 +2277,7 @@ var init_closes_routes = __esm({
     init_errors();
     import_express4 = require("express");
     init_auth();
+    init_db();
     init_closes_service();
     init_boxes_service();
     init_events_service();
@@ -2107,6 +2288,7 @@ var init_closes_routes = __esm({
       try {
         const eventId = parseNumber(req.body.event_id);
         const boxId = parseNumber(req.body.box_id);
+        await assertEventAccess(req.user, eventId);
         const ev = await getEvent(eventId);
         const box = await getBox(boxId);
         if (!ev) throw BadRequest("Evento no encontrado");
@@ -2118,6 +2300,9 @@ var init_closes_routes = __esm({
     });
     router4.get("/box/:boxId/current", async (req, res, next) => {
       try {
+        const box = await getBox(parseNumber(req.params.boxId));
+        if (!box) throw BadRequest("Caja no encontrada");
+        await assertEventAccess(req.user, box.event_id);
         const close = await currentOpenClose(parseNumber(req.params.boxId));
         if (!close) {
           res.json(null);
@@ -2132,6 +2317,7 @@ var init_closes_routes = __esm({
       try {
         const boxId = parseNumber(req.params.boxId);
         const eventId = parseNumber(req.body.event_id);
+        await assertEventAccess(req.user, eventId);
         const close = await ensureOpenClose(eventId, boxId, req.user.id);
         res.json(close);
       } catch (e) {
@@ -2140,6 +2326,9 @@ var init_closes_routes = __esm({
     });
     router4.get("/:id/summary", async (req, res, next) => {
       try {
+        const close = await getRow3("SELECT event_id FROM closes WHERE id = ?", parseNumber(req.params.id));
+        if (!close) throw BadRequest("Cierre no encontrado");
+        await assertEventAccess(req.user, close.event_id);
         res.json(await computeCloseSummary(parseNumber(req.params.id)));
       } catch (e) {
         next(e);
@@ -2147,27 +2336,44 @@ var init_closes_routes = __esm({
     });
     router4.post("/:id/close", requireRole("superadmin", "admin"), async (req, res, next) => {
       try {
+        const close = await getRow3("SELECT event_id FROM closes WHERE id = ?", parseNumber(req.params.id));
+        if (!close) throw BadRequest("Cierre no encontrado");
+        await assertEventAccess(req.user, close.event_id);
         const declared = req.body.declared_by_payment;
         if (!declared || typeof declared !== "object") {
           res.status(400).json({ error: "Datos de cierre inv\xE1lidos" });
           return;
         }
-        const close = await closeBox(parseNumber(req.params.id), req.user.id, {
+        const closed = await closeBox(parseNumber(req.params.id), req.user.id, {
           efectivo: Number(declared.efectivo ?? 0),
           transferencia: Number(declared.transferencia ?? 0),
           tarjeta: Number(declared.tarjeta ?? 0),
           otro: Number(declared.otro ?? 0)
         });
-        res.json(close);
+        res.json(closed);
       } catch (e) {
         next(e);
       }
     });
     router4.get("/", asyncHandler(async (req, res) => {
       const q = req.query;
+      const eventId = parseOptionalInt(q.event_id);
+      if (eventId) {
+        await assertEventAccess(req.user, eventId);
+      }
+      let eventIds;
+      if (!eventId && req.user.role !== "superadmin") {
+        const rows = await listEvents(req.user);
+        eventIds = rows.map((r) => r.id);
+        if (eventIds.length === 0) {
+          res.json([]);
+          return;
+        }
+      }
       res.json(
         await listCloses({
-          event_id: parseOptionalInt(q.event_id),
+          event_id: eventId,
+          event_ids: eventIds,
           box_id: parseOptionalInt(q.box_id),
           status: q.status
         })
@@ -2646,6 +2852,15 @@ var init_reports_service = __esm({
 });
 
 // src/server/routes/dashboard.routes.ts
+async function resolveEventScope(req, eventId) {
+  if (eventId) {
+    await assertEventAccess(req.user, eventId);
+    return eventId;
+  }
+  if (req.user.role === "superadmin") return void 0;
+  const events = await listEvents(req.user);
+  return events[0]?.id;
+}
 var import_express5, router5, dashboard_routes_default;
 var init_dashboard_routes = __esm({
   "src/server/routes/dashboard.routes.ts"() {
@@ -2654,34 +2869,37 @@ var init_dashboard_routes = __esm({
     init_auth();
     init_dashboard_service();
     init_reports_service();
+    init_events_service();
     init_helpers();
     router5 = (0, import_express5.Router)();
     router5.use(requireAuth);
     router5.get("/dashboard", asyncHandler(async (req, res) => {
       const q = req.query;
-      res.json(
-        await dashboard(
-          parseOptionalInt(q.event_id),
-          q.from,
-          q.to
-        )
-      );
+      const eventId = parseOptionalInt(q.event_id);
+      const scope = await resolveEventScope(req, eventId);
+      if (eventId === void 0 && scope === void 0 && req.user.role !== "superadmin") {
+        res.json({ total_recaudado: 0, total_efectivo: 0, total_transferencia: 0, total_tarjeta: 0, total_otro: 0, total_ventas: 0, total_entradas: 0, total_boletas: 0, total_productos: 0, ventas_anuladas: 0, monto_anulado: 0 });
+        return;
+      }
+      res.json(await dashboard(scope, q.from, q.to));
     }));
     router5.get("/stats", asyncHandler(async (req, res) => {
       const q = req.query;
-      res.json(
-        await stats(
-          parseOptionalInt(q.event_id),
-          q.from,
-          q.to
-        )
-      );
+      const eventId = parseOptionalInt(q.event_id);
+      const scope = await resolveEventScope(req, eventId);
+      if (eventId === void 0 && scope === void 0 && req.user.role !== "superadmin") {
+        res.json({ por_hora: [], por_dia: [], top_productos: [], por_categoria: [], por_cajero: [], por_caja: [], por_pago: [], por_tipo_ticket: [] });
+        return;
+      }
+      res.json(await stats(scope, q.from, q.to));
     }));
     router5.get("/reports/:type", async (req, res, next) => {
       try {
         const q = req.query;
+        const eventId = parseOptionalInt(q.event_id);
+        await assertEventAccess(req.user, eventId ?? 0);
         const result = await getReport(req.params.type, {
-          event_id: parseOptionalInt(q.event_id),
+          event_id: eventId,
           box_id: parseOptionalInt(q.box_id),
           user_id: parseOptionalInt(q.user_id),
           from: q.from,

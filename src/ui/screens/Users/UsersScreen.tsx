@@ -22,6 +22,7 @@ export function UsersScreen() {
   const [posCats, setPosCats] = useState<number[]>([]);
   const [posTickets, setPosTickets] = useState(true);
   const [posUnlimited, setPosUnlimited] = useState(true);
+  const [ownerId, setOwnerId] = useState<number | ''>('');
 
   const load = async () => {
     setLoading(true);
@@ -43,6 +44,7 @@ export function UsersScreen() {
     setPosCats([]);
     setPosTickets(true);
     setPosUnlimited(true);
+    setOwnerId('');
     setCreating(true);
   };
 
@@ -51,6 +53,7 @@ export function UsersScreen() {
     setPosCats((u.pos_categories || '').split(',').map(Number).filter(Boolean));
     setPosTickets(u.pos_tickets !== 0);
     setPosUnlimited(u.pos_categories == null);
+    setOwnerId(u.owner_id ?? '');
     setEditing(u);
   };
 
@@ -66,6 +69,7 @@ export function UsersScreen() {
         if (form.role === 'cajero') {
           payload.pos_categories = posUnlimited ? null : posCats.join(',');
           payload.pos_tickets = posUnlimited ? 1 : posTickets ? 1 : 0;
+          payload.owner_id = me?.role === 'admin' ? me.id : ownerId === '' ? null : Number(ownerId);
         }
         await api.put(`/users/${editing.id}`, payload);
         push('success', 'Usuario actualizado');
@@ -79,6 +83,7 @@ export function UsersScreen() {
         if (form.role === 'cajero') {
           body.pos_categories = posUnlimited ? null : posCats.join(',');
           body.pos_tickets = posUnlimited ? 1 : posTickets ? 1 : 0;
+          body.owner_id = me?.role === 'admin' ? me.id : ownerId === '' ? null : Number(ownerId);
         }
         await api.post('/users', body);
         push('success', 'Usuario creado');
@@ -178,6 +183,16 @@ export function UsersScreen() {
             <p className="muted" style={{ fontSize: 12.5, marginBottom: 10 }}>
               Elegí qué vende este cajero. En el POS solo va a ver lo que asignes aquí.
             </p>
+            {me?.role === 'superadmin' && (
+              <Field label="Pertenece al admin (inquilino)">
+                <select className="input" value={ownerId} onChange={(e) => setOwnerId(e.target.value === '' ? '' : Number(e.target.value))}>
+                  <option value="">Sin admin (solo ve eventos del superadmin)</option>
+                  {users.filter((u) => u.role === 'admin').map((a) => (
+                    <option key={a.id} value={a.id}>{a.name} ({a.username})</option>
+                  ))}
+                </select>
+              </Field>
+            )}
             <label className="row" style={{ marginBottom: 8 }}>
               <input type="checkbox" checked={posUnlimited} onChange={(e) => setPosUnlimited(e.target.checked)} />
               <span style={{ fontWeight: 700 }}>Ve todo el evento (sin restricciones)</span>

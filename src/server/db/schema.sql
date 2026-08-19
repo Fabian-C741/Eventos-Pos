@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS users (
   active INTEGER NOT NULL DEFAULT 1,
   pos_categories TEXT,
   pos_tickets INTEGER NOT NULL DEFAULT 1,
+  owner_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
   last_login_at TEXT
 );
@@ -31,6 +32,7 @@ CREATE TABLE IF NOT EXISTS events (
   start_date TEXT DEFAULT '',
   end_date TEXT DEFAULT '',
   active INTEGER NOT NULL DEFAULT 1,
+  owner_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
 
