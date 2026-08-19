@@ -492,7 +492,7 @@ var init_pg = __esm({
     import_postgres = __toESM(require("postgres"));
     init_logger();
     TZ = process.env.EVENTOS_TZ || "America/Argentina/Buenos_Aires";
-    process.env.TZ = process.env.TZ || TZ;
+    process.env.TZ = TZ;
     OID_BIGINT = 20;
     OID_NUMERIC = 1700;
     sql = null;

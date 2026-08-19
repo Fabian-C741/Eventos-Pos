@@ -6,7 +6,7 @@ export interface DbConfig {
 }
 
 const TZ = process.env.EVENTOS_TZ || 'America/Argentina/Buenos_Aires';
-process.env.TZ = process.env.TZ || TZ;
+process.env.TZ = TZ;
 
 const OID_BIGINT = 20;
 const OID_NUMERIC = 1700;
