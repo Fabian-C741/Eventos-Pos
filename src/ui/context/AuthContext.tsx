@@ -37,6 +37,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const st = await api.get<{ setup: boolean }>('/auth/status', { silent: true });
         setNeedsSetup(st.setup);
+        if (getToken()) {
+          try {
+            const me = await api.get<SessionUser>('/auth/me', { silent: true });
+            setUserCache(me);
+            setUser(me);
+          } catch {
+            setToken(null);
+            setUserCache(null);
+            setUser(null);
+          }
+        }
       } catch {
         setNeedsSetup(true);
       }

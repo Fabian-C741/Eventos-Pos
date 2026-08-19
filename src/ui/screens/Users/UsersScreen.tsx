@@ -45,7 +45,7 @@ export function UsersScreen() {
 
   const save = async () => {
     if (!form.username.trim()) return push('error', 'El usuario es obligatorio');
-    if (form.role === 'cajero' && !/^\d{4}$/.test(form.pin)) return push('error', 'El PIN debe tener 4 dígitos');
+    if (form.role === 'cajero' && creating && !/^\d{4}$/.test(form.pin)) return push('error', 'El PIN debe tener 4 dígitos');
     if (form.role !== 'cajero' && creating && form.password.length < 6) return push('error', 'La contraseña debe tener al menos 6 caracteres');
     try {
       if (editing) {
@@ -143,7 +143,7 @@ export function UsersScreen() {
         </Field>
 
         {form.role === 'cajero' ? (
-          <Field label="PIN de 4 dígitos (el cajero solo toca números)">
+          <Field label={editing ? 'PIN de 4 dígitos (dejar vacío para no cambiarlo)' : 'PIN de 4 dígitos (el cajero solo toca números)'}>
             <input className="input" inputMode="numeric" maxLength={4} value={form.pin} onChange={(e) => setForm({ ...form, pin: e.target.value.replace(/[^\d]/g, '').slice(0, 4) })} placeholder="1234" style={{ fontSize: 20, letterSpacing: 8 }} />
           </Field>
         ) : (

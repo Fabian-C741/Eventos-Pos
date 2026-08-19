@@ -364,3 +364,27 @@ test('eliminar evento borra ventas, productos y categorías', async () => {
   const closes = await api('GET', `/closes?event_id=${eventId}`);
   assert.equal(closes.json.length, 0);
 });
+
+test('editar cajero: cambiar solo el nombre respeta el PIN actual', async () => {
+  const list = await api('GET', '/users');
+  const cajero = list.json.find((u: { username: string }) => u.username === 'cajero1');
+  assert.ok(cajero);
+
+  const r = await api('PUT', `/users/${cajero.id}`, { name: 'Ana Nuevo Nombre', active: 1 });
+  assert.equal(r.status, 200);
+
+  const login = await api('POST', '/auth/login/pin', { username: 'cajero1', pin: '1234' }, false);
+  assert.equal(login.status, 200);
+  assert.equal(login.json.user.name, 'Ana Nuevo Nombre');
+
+  const me = await fetch(base + '/auth/me', {
+    headers: { Authorization: `Bearer ${login.json.token}` },
+  });
+  assert.equal((await me.json()).name, 'Ana Nuevo Nombre');
+
+  const r2 = await api('PUT', `/users/${cajero.id}`, { name: 'Ana Final', pin: '5678' });
+  assert.equal(r2.status, 200);
+  const login2 = await api('POST', '/auth/login/pin', { username: 'cajero1', pin: '5678' }, false);
+  assert.equal(login2.status, 200);
+  assert.equal(login2.json.user.name, 'Ana Final');
+});

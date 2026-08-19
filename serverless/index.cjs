@@ -935,6 +935,9 @@ var init_auth_routes = __esm({
       await logout(token);
       res.json({ ok: true });
     }));
+    router.get("/me", requireAuth, asyncHandler(async (req, res) => {
+      res.json(req.user);
+    }));
     router.post("/change-password", requireAuth, async (req, res, next) => {
       try {
         await changeOwnPassword(req.user.id, String(req.body.current ?? ""), String(req.body.next ?? ""));
