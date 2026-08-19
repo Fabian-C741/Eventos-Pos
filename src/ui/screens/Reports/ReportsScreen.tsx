@@ -18,6 +18,7 @@ const TYPES = [
   { key: 'cajeros', label: '👥 Por cajero' },
   { key: 'cajas', label: '🗄️ Por caja' },
   { key: 'productos', label: '🧺 Productos' },
+  { key: 'ventas', label: '🧾 Por vendedor' },
   { key: 'entradas', label: '🎟️ Entradas y boletas' },
   { key: 'pagos', label: '💳 Formas de pago' },
   { key: 'cierres', label: '🔒 Cierres de caja' },

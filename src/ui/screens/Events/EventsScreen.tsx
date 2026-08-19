@@ -134,7 +134,7 @@ export function EventsScreen() {
         onConfirm={remove}
         title="Eliminar evento"
         danger
-        message={`¿Seguro que querés eliminar "${deleting?.name}"? Si tiene ventas, no se podrá eliminar.`}
+        message={`¿Seguro que querés eliminar "${deleting?.name}"? Se borrarán también sus cajas, productos, categorías, entradas, ventas y cierres. Esta acción no se puede deshacer.`}
         confirmText="Eliminar"
       />
     </div>

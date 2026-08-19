@@ -993,11 +993,19 @@ async function updateEvent(id, input, userId) {
   return getEvent(id);
 }
 async function deleteEvent(id, userId) {
-  const sales = await getRow3("SELECT COUNT(*) AS c FROM sales WHERE event_id = ?", id);
-  if ((sales?.c ?? 0) > 0) {
-    throw BadRequest("No se puede eliminar un evento con ventas. Pod\xE9s desactivarlo.");
-  }
-  await exec3("DELETE FROM events WHERE id = ?", id);
+  await runInTransaction3(async () => {
+    await exec3("DELETE FROM sale_tickets WHERE sale_id IN (SELECT id FROM sales WHERE event_id = ?)", id);
+    await exec3("DELETE FROM tickets WHERE sale_id IN (SELECT id FROM sales WHERE event_id = ?)", id);
+    await exec3("DELETE FROM voids WHERE sale_id IN (SELECT id FROM sales WHERE event_id = ?)", id);
+    await exec3("DELETE FROM sale_items WHERE sale_id IN (SELECT id FROM sales WHERE event_id = ?)", id);
+    await exec3("DELETE FROM sales WHERE event_id = ?", id);
+    await exec3("DELETE FROM closes WHERE event_id = ?", id);
+    await exec3("DELETE FROM boxes WHERE event_id = ?", id);
+    await exec3("DELETE FROM products WHERE event_id = ?", id);
+    await exec3("DELETE FROM categories WHERE event_id = ?", id);
+    await exec3("DELETE FROM ticket_types WHERE event_id = ?", id);
+    await exec3("DELETE FROM events WHERE id = ?", id);
+  });
   await audit(userId, "delete", "event", id, {});
   return true;
 }
@@ -1842,6 +1850,9 @@ async function openClose(eventId, boxId, userId) {
 async function currentOpenClose(boxId) {
   return getRow3("SELECT * FROM closes WHERE box_id = ? AND status = ?", boxId, "abierto");
 }
+async function getClose(closeId) {
+  return getRow3("SELECT * FROM closes WHERE id = ?", closeId);
+}
 async function computeCloseSummary(closeId) {
   const close = await getRow3("SELECT * FROM closes WHERE id = ?", closeId);
   if (!close) throw BadRequest("Cierre no encontrado");
@@ -1989,20 +2000,31 @@ var init_closes_routes = __esm({
         next(e);
       }
     });
-    router4.post("/:id/close", requireRole("superadmin", "admin"), async (req, res, next) => {
+    router4.post("/:id/close", async (req, res, next) => {
       try {
+        const id = parseNumber(req.params.id);
+        const close = await getClose(id);
+        if (!close) {
+          res.status(404).json({ error: "Cierre no encontrado" });
+          return;
+        }
+        const isAdmin = req.user.role === "superadmin" || req.user.role === "admin";
+        if (!isAdmin && close.user_id !== req.user.id) {
+          res.status(403).json({ error: "Solo pod\xE9s cerrar tu propia caja" });
+          return;
+        }
         const declared = req.body.declared_by_payment;
         if (!declared || typeof declared !== "object") {
           res.status(400).json({ error: "Datos de cierre inv\xE1lidos" });
           return;
         }
-        const close = await closeBox(parseNumber(req.params.id), req.user.id, {
+        const closed = await closeBox(id, req.user.id, {
           efectivo: Number(declared.efectivo ?? 0),
           transferencia: Number(declared.transferencia ?? 0),
           tarjeta: Number(declared.tarjeta ?? 0),
           otro: Number(declared.otro ?? 0)
         });
-        res.json(close);
+        res.json(closed);
       } catch (e) {
         next(e);
       }
@@ -2373,6 +2395,32 @@ async function reportePagos(f) {
     rows: rows.map((r) => ({ ...r, pago: P_LABEL[r.pago] || r.pago }))
   };
 }
+async function reporteVentas(f) {
+  const { where, params } = buildWhere(f);
+  const rows = await allRows3(
+    `SELECT COALESCE(u.name, 'Eliminado') AS vendedor, si.product_name AS producto,
+       COALESCE(SUM(si.quantity), 0) AS cantidad,
+       COALESCE(SUM(si.subtotal), 0) AS total
+     FROM sale_items si
+     LEFT JOIN sales s ON s.id = si.sale_id
+     LEFT JOIN users u ON u.id = s.user_id
+     WHERE ${where.join(" AND ")}
+     GROUP BY u.name, si.product_name
+     ORDER BY total DESC`,
+    ...params
+  );
+  return {
+    type: "ventas",
+    title: "Ventas por producto y vendedor",
+    columns: [
+      { key: "vendedor", label: "Vendedor" },
+      { key: "producto", label: "Producto" },
+      { key: "cantidad", label: "Cantidad" },
+      { key: "total", label: "Total" }
+    ],
+    rows
+  };
+}
 async function reporteCierres(f) {
   const where = [];
   const params = [];
@@ -2440,6 +2488,8 @@ async function getReport(type, f) {
       return reporteEntradas(f);
     case "pagos":
       return reportePagos(f);
+    case "ventas":
+      return reporteVentas(f);
     case "cierres":
       return reporteCierres(f);
     default:

@@ -1,6 +1,6 @@
 import { BadRequest } from '../errors';
 import { Router } from 'express';
-import { requireAuth, requireRole, AuthedRequest, asyncHandler } from '../auth';
+import { requireAuth, AuthedRequest, asyncHandler } from '../auth';
 import {
   openClose,
   currentOpenClose,
@@ -8,6 +8,7 @@ import {
   closeBox,
   listCloses,
   ensureOpenClose,
+  getClose,
 } from '../services/closes.service';
 import { getBox } from '../services/boxes.service';
 import { getEvent } from '../services/events.service';
@@ -63,20 +64,31 @@ router.get('/:id/summary', async (req, res, next) => {
   }
 });
 
-router.post('/:id/close', requireRole('superadmin', 'admin'), async (req: AuthedRequest, res, next) => {
+router.post('/:id/close', async (req: AuthedRequest, res, next) => {
   try {
+    const id = parseNumber(req.params.id);
+    const close = await getClose(id);
+    if (!close) {
+      res.status(404).json({ error: 'Cierre no encontrado' });
+      return;
+    }
+    const isAdmin = req.user!.role === 'superadmin' || req.user!.role === 'admin';
+    if (!isAdmin && close.user_id !== req.user!.id) {
+      res.status(403).json({ error: 'Solo podés cerrar tu propia caja' });
+      return;
+    }
     const declared = req.body.declared_by_payment as Partial<Record<PaymentMethod, number>>;
     if (!declared || typeof declared !== 'object') {
       res.status(400).json({ error: 'Datos de cierre inválidos' });
       return;
     }
-    const close = await closeBox(parseNumber(req.params.id), req.user!.id, {
+    const closed = await closeBox(id, req.user!.id, {
       efectivo: Number(declared.efectivo ?? 0),
       transferencia: Number(declared.transferencia ?? 0),
       tarjeta: Number(declared.tarjeta ?? 0),
       otro: Number(declared.otro ?? 0),
     });
-    res.json(close);
+    res.json(closed);
   } catch (e) {
     next(e);
   }

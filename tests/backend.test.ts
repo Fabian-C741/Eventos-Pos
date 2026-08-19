@@ -320,3 +320,47 @@ test('seguridad: sesión inválida rechazada', async () => {
   });
   assert.equal(res.status, 401);
 });
+
+test('reporte por vendedor incluye quien vendió', async () => {
+  const r = await api('GET', `/reports/ventas?event_id=${eventId}`);
+  assert.equal(r.status, 200);
+  assert.ok(r.json.rows.length > 0);
+  assert.ok(r.json.columns.some((c: { key: string }) => c.key === 'vendedor'));
+  const row = r.json.rows[0];
+  assert.ok(row.producto);
+  assert.ok(row.vendedor);
+  assert.ok(Number(row.total) > 0);
+});
+
+test('cajero puede cerrar su propia caja', async () => {
+  const login = await api('POST', '/auth/login/pin', { username: 'cajero1', pin: '1234' }, false);
+  const cashierToken = login.json.token;
+  const ensure = await fetch(base + `/closes/box/${boxId}/ensure`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cashierToken}` },
+    body: JSON.stringify({ event_id: eventId }),
+  });
+  const close = await ensure.json();
+  assert.ok(close.id > 0);
+  const res = await fetch(base + `/closes/${close.id}/close`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cashierToken}` },
+    body: JSON.stringify({ declared_by_payment: { efectivo: 0, transferencia: 0, tarjeta: 0, otro: 0 } }),
+  });
+  assert.equal(res.status, 200);
+  assert.equal((await res.json()).status, 'cerrado');
+});
+
+test('eliminar evento borra ventas, productos y categorías', async () => {
+  const r = await api('DELETE', `/events/${eventId}`);
+  assert.equal(r.status, 200);
+  assert.equal(r.json.ok, true);
+  const prods = await api('GET', `/events/${eventId}/products`);
+  assert.equal(prods.json.length, 0);
+  const cats = await api('GET', `/events/${eventId}/categories`);
+  assert.equal(cats.json.length, 0);
+  const sales = await api('GET', `/sales?event_id=${eventId}`);
+  assert.equal(sales.json.length, 0);
+  const closes = await api('GET', `/closes?event_id=${eventId}`);
+  assert.equal(closes.json.length, 0);
+});

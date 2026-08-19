@@ -211,6 +211,33 @@ export async function reportePagos(f: Filters): Promise<ReportResult> {
   };
 }
 
+export async function reporteVentas(f: Filters): Promise<ReportResult> {
+  const { where, params } = buildWhere(f);
+  const rows = await allRows<Record<string, unknown>>(
+    `SELECT COALESCE(u.name, 'Eliminado') AS vendedor, si.product_name AS producto,
+       COALESCE(SUM(si.quantity), 0) AS cantidad,
+       COALESCE(SUM(si.subtotal), 0) AS total
+     FROM sale_items si
+     LEFT JOIN sales s ON s.id = si.sale_id
+     LEFT JOIN users u ON u.id = s.user_id
+     WHERE ${where.join(' AND ')}
+     GROUP BY u.name, si.product_name
+     ORDER BY total DESC`,
+    ...params,
+  );
+  return {
+    type: 'ventas',
+    title: 'Ventas por producto y vendedor',
+    columns: [
+      { key: 'vendedor', label: 'Vendedor' },
+      { key: 'producto', label: 'Producto' },
+      { key: 'cantidad', label: 'Cantidad' },
+      { key: 'total', label: 'Total' },
+    ],
+    rows,
+  };
+}
+
 export async function reporteCierres(f: Filters): Promise<ReportResult> {
   const where: string[] = [];
   const params: unknown[] = [];
@@ -279,6 +306,8 @@ export async function getReport(type: string, f: Filters): Promise<ReportResult>
       return reporteEntradas(f);
     case 'pagos':
       return reportePagos(f);
+    case 'ventas':
+      return reporteVentas(f);
     case 'cierres':
       return reporteCierres(f);
     default:

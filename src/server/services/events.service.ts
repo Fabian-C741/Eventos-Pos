@@ -1,5 +1,5 @@
 import { BadRequest } from '../errors';
-import { allRows, exec, getRow } from '../db/db';
+import { allRows, exec, getRow, runInTransaction } from '../db/db';
 import { audit } from './audit.service';
 import type { Event } from '../../shared/types';
 
@@ -49,11 +49,19 @@ export async function updateEvent(id: number, input: Partial<{ name: string; des
 }
 
 export async function deleteEvent(id: number, userId: number) {
-  const sales = await getRow<{ c: number }>('SELECT COUNT(*) AS c FROM sales WHERE event_id = ?', id);
-  if ((sales?.c ?? 0) > 0) {
-    throw BadRequest('No se puede eliminar un evento con ventas. Podés desactivarlo.');
-  }
-  await exec('DELETE FROM events WHERE id = ?', id);
+  await runInTransaction(async () => {
+    await exec('DELETE FROM sale_tickets WHERE sale_id IN (SELECT id FROM sales WHERE event_id = ?)', id);
+    await exec('DELETE FROM tickets WHERE sale_id IN (SELECT id FROM sales WHERE event_id = ?)', id);
+    await exec('DELETE FROM voids WHERE sale_id IN (SELECT id FROM sales WHERE event_id = ?)', id);
+    await exec('DELETE FROM sale_items WHERE sale_id IN (SELECT id FROM sales WHERE event_id = ?)', id);
+    await exec('DELETE FROM sales WHERE event_id = ?', id);
+    await exec('DELETE FROM closes WHERE event_id = ?', id);
+    await exec('DELETE FROM boxes WHERE event_id = ?', id);
+    await exec('DELETE FROM products WHERE event_id = ?', id);
+    await exec('DELETE FROM categories WHERE event_id = ?', id);
+    await exec('DELETE FROM ticket_types WHERE event_id = ?', id);
+    await exec('DELETE FROM events WHERE id = ?', id);
+  });
   await audit(userId, 'delete', 'event', id, {});
   return true;
 }

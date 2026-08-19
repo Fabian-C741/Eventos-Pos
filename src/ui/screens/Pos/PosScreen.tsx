@@ -6,7 +6,7 @@ import { useToast } from '../../context/ToastContext';
 import { api, flushQueue, hasPendingQueue, queueSale } from '../../api/client';
 import { formatMoney, padNumber } from '../../../shared/format';
 import { PAYMENT_METHODS, PAYMENT_LABELS } from '../../../shared/constants';
-import type { CartItem, CartTicket, Event, Box, TicketType, Sale } from '../../../shared/types';
+import type { CartItem, CartTicket, Event, Box, TicketType, Sale, Close, CloseSummary } from '../../../shared/types';
 
 interface PendingSale {
   op: number | null;
@@ -41,6 +41,8 @@ export function PosScreen() {
   const [recent, setRecent] = useState<Sale[]>([]);
   const [pendingQueue, setPendingQueue] = useState(hasPendingQueue());
   const [clock, setClock] = useState(new Date());
+  const [closeModal, setCloseModal] = useState<{ close: Close; summary: CloseSummary } | null>(null);
+  const [declared, setDeclared] = useState<Record<string, string>>({ efectivo: '', transferencia: '', tarjeta: '', otro: '' });
 
   const saleSound = useRef<AudioContext | null>(null);
 
@@ -78,6 +80,19 @@ export function PosScreen() {
     if (!activeEvent) return;
     refreshEventData();
   }, [activeEvent, refreshEventData]);
+
+  useEffect(() => {
+    const persisted = Number(localStorage.getItem('epos_box') ?? '');
+    if (persisted > 0) {
+      api
+        .get<{ close: Close | null }>(`/closes/box/${persisted}/current`)
+        .then((r) => {
+          if (!r?.close) setBoxId(null);
+        })
+        .catch(() => {});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (boxId) {
@@ -224,6 +239,51 @@ export function PosScreen() {
     if (n > 0) push('success', `${n} venta(s) pendiente(s) subidas`);
   };
 
+  const openCloseFlow = async () => {
+    if (!boxId) return;
+    try {
+      const r = await api.get<{ close: Close; summary: CloseSummary }>(`/closes/box/${boxId}/current`);
+      if (!r?.close) {
+        push('warn', 'No hay una caja abierta');
+        return;
+      }
+      setDeclared({
+        efectivo: String(r.summary.by_payment.efectivo ?? ''),
+        transferencia: String(r.summary.by_payment.transferencia ?? ''),
+        tarjeta: String(r.summary.by_payment.tarjeta ?? ''),
+        otro: String(r.summary.by_payment.otro ?? ''),
+      });
+      setCloseModal({ close: r.close, summary: r.summary });
+    } catch (e) {
+      push('error', (e as Error).message);
+    }
+  };
+
+  const doClose = async () => {
+    if (!closeModal) return;
+    try {
+      await api.post(`/closes/${closeModal.close.id}/close`, {
+        declared_by_payment: {
+          efectivo: Number(declared.efectivo || 0),
+          transferencia: Number(declared.transferencia || 0),
+          tarjeta: Number(declared.tarjeta || 0),
+          otro: Number(declared.otro || 0),
+        },
+      });
+      push('success', 'Cierre de caja registrado. Cambiá de turno para seguir vendiendo.');
+      setCloseModal(null);
+      setItems([]);
+      setTickets([]);
+      setBoxId(null);
+    } catch (e) {
+      push('error', (e as Error).message);
+    }
+  };
+
+  const closeDiff = closeModal
+    ? Number(declared.efectivo || 0) + Number(declared.transferencia || 0) + Number(declared.tarjeta || 0) + Number(declared.otro || 0) - closeModal.summary.total
+    : 0;
+
   // ---- selección de evento / caja ----
   const showEventPicker = !activeEvent && events.length > 0;
   const showBoxPicker = activeEvent && !boxId;
@@ -248,6 +308,11 @@ export function PosScreen() {
           {pendingQueue ? '📴 Sin conexión' : '🟢 Online'}
         </span>
         <span className="clock">{clock.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</span>
+        {boxId && (
+          <button className="btn btn-sm" style={{ background: 'var(--danger)', color: '#fff', borderColor: 'var(--danger)' }} onClick={openCloseFlow}>
+            🔒 Cerrar caja
+          </button>
+        )}
         {user?.role !== 'cajero' && (
           <button className="btn btn-sm btn-ghost" style={{ borderColor: '#334155', color: '#fff' }} onClick={() => navigate('/dashboard')}>
             ⚙ Admin
@@ -483,6 +548,59 @@ export function PosScreen() {
                     {m.icon} {m.label}
                   </button>
                 ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cerrar caja */}
+      {closeModal && (
+        <div className="modal-backdrop">
+          <div className="modal" style={{ maxWidth: 480 }}>
+            <div className="modal-head">
+              <h2 style={{ fontSize: 18 }}>🔒 Cerrar caja · {boxes.find((b) => b.id === closeModal.close.box_id)?.name || 'Caja'}</h2>
+            </div>
+            <div className="modal-body">
+              <div className="row-between mb-16">
+                <div>
+                  <div className="muted" style={{ fontSize: 12.5, fontWeight: 700 }}>VENTAS REALIZADAS</div>
+                  <div style={{ fontSize: 22, fontWeight: 800 }}>{closeModal.summary.sales_count}</div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div className="muted" style={{ fontSize: 12.5, fontWeight: 700 }}>TOTAL ESPERADO</div>
+                  <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--primary)' }}>{formatMoney(closeModal.summary.total)}</div>
+                </div>
+              </div>
+
+              <div style={{ fontWeight: 800, marginBottom: 10 }}>Declará lo que hay en la caja (dinero real)</div>
+              <div className="grid grid-2">
+                {PAYMENT_METHODS.map((m) => (
+                  <div key={m.key} className="field">
+                    <label style={{ fontSize: 12.5, fontWeight: 700 }}>
+                      {m.icon} {PAYMENT_LABELS[m.key]} (esperado: {formatMoney(closeModal.summary.by_payment[m.key as keyof typeof closeModal.summary.by_payment] || 0)})
+                    </label>
+                    <input
+                      className="input"
+                      inputMode="numeric"
+                      value={declared[m.key] ?? ''}
+                      onChange={(e) => setDeclared({ ...declared, [m.key]: e.target.value.replace(/[^\d]/g, '') })}
+                      style={{ fontSize: 18, fontWeight: 800 }}
+                    />
+                  </div>
+                ))}
+              </div>
+
+              <div className="row-between mt-16" style={{ padding: '12px 14px', background: 'var(--surface-2)', borderRadius: 12 }}>
+                <span style={{ fontWeight: 800 }}>Diferencia</span>
+                <span className={`badge ${closeDiff === 0 ? 'badge-green' : closeDiff > 0 ? 'badge-blue' : 'badge-red'}`} style={{ fontSize: 15 }}>
+                  {closeDiff === 0 ? '✓ Cuadra' : closeDiff > 0 ? `+${formatMoney(closeDiff)}` : formatMoney(closeDiff)}
+                </span>
+              </div>
+
+              <div className="row mt-16" style={{ justifyContent: 'flex-end' }}>
+                <button className="btn btn-ghost" onClick={() => setCloseModal(null)}>Cancelar</button>
+                <button className="btn btn-primary" onClick={doClose}>Confirmar cierre</button>
               </div>
             </div>
           </div>

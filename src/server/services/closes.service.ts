@@ -24,6 +24,10 @@ export async function currentOpenClose(boxId: number): Promise<Close | undefined
   return getRow<Close>('SELECT * FROM closes WHERE box_id = ? AND status = ?', boxId, 'abierto');
 }
 
+export async function getClose(closeId: number): Promise<Close | undefined> {
+  return getRow<Close>('SELECT * FROM closes WHERE id = ?', closeId);
+}
+
 export async function computeCloseSummary(closeId: number): Promise<CloseSummary> {
   const close = await getRow<Close>('SELECT * FROM closes WHERE id = ?', closeId);
   if (!close) throw BadRequest('Cierre no encontrado');
