@@ -17,8 +17,8 @@ export function ConfigScreen() {
 
   useEffect(() => {
     api
-      .get<AppSettings>('/settings')
-      .then(setForm)
+      .get<Partial<AppSettings>>('/settings')
+      .then((s) => setForm({ app_name: s.app_name ?? '', currency_symbol: s.currency_symbol ?? '$', receipt_footer: s.receipt_footer ?? '' }))
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);

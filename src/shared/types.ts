@@ -193,6 +193,8 @@ export interface AppSettings {
   sound_enabled: string;
   auto_backup: string;
   device_name: string;
+  currency_symbol: string;
+  receipt_footer: string;
 }
 
 export interface DashboardData {

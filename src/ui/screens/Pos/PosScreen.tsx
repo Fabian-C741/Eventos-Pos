@@ -57,8 +57,20 @@ export function PosScreen() {
     [items, tickets],
   );
 
+  const timeOffset = useRef(0);
+
   useEffect(() => {
-    const t = setInterval(() => setClock(new Date()), 1000);
+    api
+      .get<{ epoch: number }>('/system/time')
+      .then((r) => {
+        timeOffset.current = r.epoch - Date.now();
+        setClock(new Date(Date.now() + timeOffset.current));
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const t = setInterval(() => setClock(new Date(Date.now() + timeOffset.current)), 1000);
     return () => clearInterval(t);
   }, []);
 

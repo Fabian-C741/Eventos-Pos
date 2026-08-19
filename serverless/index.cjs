@@ -2515,10 +2515,12 @@ var init_dashboard_routes = __esm({
 // src/server/services/settings.service.ts
 var settings_service_exports = {};
 __export(settings_service_exports, {
+  clearAppLogs: () => clearAppLogs,
   getSetting: () => getSetting,
   getSettings: () => getSettings,
   listAppLogs: () => listAppLogs,
   listAudit: () => listAudit,
+  pruneAppLogs: () => pruneAppLogs,
   setSetting: () => setSetting
 });
 async function getSetting(key) {
@@ -2536,7 +2538,9 @@ async function getSettings() {
     app_name: await getSetting("app_name"),
     sound_enabled: await getSetting("sound_enabled"),
     auto_backup: await getSetting("auto_backup"),
-    device_name: await getSetting("device_name")
+    device_name: await getSetting("device_name"),
+    currency_symbol: await getSetting("currency_symbol"),
+    receipt_footer: await getSetting("receipt_footer")
   };
 }
 async function setSetting(key, value, userId) {
@@ -2546,7 +2550,23 @@ async function setSetting(key, value, userId) {
   await audit(userId, "update", "settings", null, { key });
   return true;
 }
+async function clearAppLogs() {
+  await exec3("DELETE FROM app_logs");
+  return true;
+}
+async function pruneAppLogs(days = 30) {
+  await exec3("DELETE FROM app_logs WHERE created_at < ?", new Date(Date.now() - days * 24 * 60 * 60 * 1e3).toISOString());
+  return true;
+}
 async function listAppLogs(filters) {
+  const now = Date.now();
+  if (now - lastLogPrune > 60 * 60 * 1e3) {
+    lastLogPrune = now;
+    try {
+      await pruneAppLogs();
+    } catch {
+    }
+  }
   const where = [];
   const params = [];
   if (filters.level) {
@@ -2599,7 +2619,7 @@ async function listAudit(filters) {
     limit
   );
 }
-var DEFAULT_SETTINGS;
+var DEFAULT_SETTINGS, lastLogPrune;
 var init_settings_service = __esm({
   "src/server/services/settings.service.ts"() {
     "use strict";
@@ -2610,8 +2630,11 @@ var init_settings_service = __esm({
       app_name: "Eventos POS",
       sound_enabled: "1",
       auto_backup: "1",
-      device_name: "Caja central"
+      device_name: "Caja central",
+      currency_symbol: "$",
+      receipt_footer: ""
     };
+    lastLogPrune = 0;
   }
 });
 
@@ -2743,8 +2766,14 @@ var init_system_routes = __esm({
     });
     router6.put("/settings", requireRole("superadmin"), async (req, res, next) => {
       try {
-        const { key, value } = req.body;
-        await setSetting(String(key), String(value), req.user.id);
+        const body = req.body || {};
+        if ("key" in body && "value" in body) {
+          await setSetting(String(body.key), String(body.value), req.user.id);
+        } else {
+          for (const [k, v] of Object.entries(body)) {
+            if (v !== void 0 && v !== null) await setSetting(k, String(v), req.user.id);
+          }
+        }
         res.json(await getSettings());
       } catch (e) {
         next(e);
@@ -2761,6 +2790,10 @@ var init_system_routes = __esm({
           limit: parseOptionalInt(q.limit) ?? 200
         })
       );
+    });
+    router6.delete("/logs", requireRole("superadmin"), async (_req, res) => {
+      await clearAppLogs();
+      res.json({ ok: true });
     });
     router6.get("/audit", requireRole("superadmin"), async (req, res) => {
       const q = req.query;
@@ -2828,6 +2861,15 @@ var init_system_routes = __esm({
     });
     router6.get("/health", (_req, res) => {
       res.json({ ok: true, time: (/* @__PURE__ */ new Date()).toISOString() });
+    });
+    router6.get("/time", (_req, res) => {
+      const d = /* @__PURE__ */ new Date();
+      const pad = (x) => String(x).padStart(2, "0");
+      res.json({
+        iso: d.toISOString(),
+        local: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`,
+        epoch: d.getTime()
+      });
     });
     router6.post("/log/client", (req, res) => {
       const { level, module: module2, message, details } = req.body || {};

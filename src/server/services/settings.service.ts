@@ -8,6 +8,8 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   sound_enabled: '1',
   auto_backup: '1',
   device_name: 'Caja central',
+  currency_symbol: '$',
+  receipt_footer: '',
 };
 
 export async function getSetting(key: string): Promise<string> {
@@ -27,6 +29,8 @@ export async function getSettings(): Promise<AppSettings> {
     sound_enabled: await getSetting('sound_enabled'),
     auto_backup: await getSetting('auto_backup'),
     device_name: await getSetting('device_name'),
+    currency_symbol: await getSetting('currency_symbol'),
+    receipt_footer: await getSetting('receipt_footer'),
   };
 }
 
@@ -38,7 +42,28 @@ export async function setSetting(key: string, value: string, userId: number) {
   return true;
 }
 
+export async function clearAppLogs() {
+  await exec('DELETE FROM app_logs');
+  return true;
+}
+
+export async function pruneAppLogs(days = 30) {
+  await exec('DELETE FROM app_logs WHERE created_at < ?', new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString());
+  return true;
+}
+
+let lastLogPrune = 0;
+
 export async function listAppLogs(filters: { level?: string; from?: string; to?: string; module?: string; limit?: number }): Promise<unknown[]> {
+  const now = Date.now();
+  if (now - lastLogPrune > 60 * 60 * 1000) {
+    lastLogPrune = now;
+    try {
+      await pruneAppLogs();
+    } catch {
+      /* noop */
+    }
+  }
   const where: string[] = [];
   const params: unknown[] = [];
   if (filters.level) {

@@ -42,7 +42,25 @@ export function LogsScreen() {
 
   return (
     <div>
-      <PageHeader title="Logs y auditoría" subtitle="Solo el superadministrador puede ver estos registros (se actualizan en tiempo real)" />
+      <PageHeader title="Logs y auditoría" subtitle="Solo el superadministrador puede ver estos registros (se actualizan en tiempo real)">
+        {tab === 'logs' && (
+          <button
+            className="btn btn-ghost"
+            style={{ color: 'var(--danger)' }}
+            onClick={async () => {
+              if (!confirm('¿Eliminar todos los logs de errores?')) return;
+              try {
+                await api.del('/logs');
+                setLogs([]);
+              } catch {
+                /* noop */
+              }
+            }}
+          >
+            🗑 Limpiar logs
+          </button>
+        )}
+      </PageHeader>
 
       <div className="toolbar">
         <div className="row" style={{ gap: 6 }}>
