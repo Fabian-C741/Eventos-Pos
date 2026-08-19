@@ -221,6 +221,13 @@ export async function deleteUser(id: number, actorRole: Role, actorId: number) {
   return 'deleted';
 }
 
+export async function listActiveCashiers(): Promise<User[]> {
+  return allRows<User>(
+    `SELECT id, username, name, role, active, created_at, last_login_at
+     FROM users WHERE role = 'cajero' AND active = 1 ORDER BY name`,
+  );
+}
+
 export async function changeOwnPassword(userId: number, current: string, next: string) {
   const user = await getRow<UserRow>('SELECT * FROM users WHERE id = ?', userId);
   if (!user || !verifyPassword(current, user.password_hash)) {

@@ -202,8 +202,8 @@ export function CajeroLogin() {
 
   useEffect(() => {
     api
-      .get<User[]>('/users')
-      .then((us) => setCashiers(us.filter((u) => u.role === 'cajero' && u.active === 1)))
+      .get<User[]>('/auth/cashiers')
+      .then((us) => setCashiers(us))
       .catch(() => setCashiers([]));
   }, []);
 

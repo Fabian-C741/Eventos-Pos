@@ -6,6 +6,7 @@ import {
   logout,
   needsSetup,
   changeOwnPassword,
+  listActiveCashiers,
 } from '../services/auth.service';
 import { sanitizeInput } from '../security';
 import { audit } from '../services/audit.service';
@@ -17,6 +18,10 @@ const router = Router();
 
 router.get('/status', asyncHandler(async (_req, res) => {
   res.json({ setup: await needsSetup() });
+}));
+
+router.get('/cashiers', asyncHandler(async (_req, res) => {
+  res.json(await listActiveCashiers());
 }));
 
 router.post('/setup', async (req, res, next) => {

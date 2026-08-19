@@ -753,6 +753,12 @@ async function deleteUser(id, actorRole, actorId) {
   await exec3("DELETE FROM users WHERE id = ?", id);
   return "deleted";
 }
+async function listActiveCashiers() {
+  return allRows3(
+    `SELECT id, username, name, role, active, created_at, last_login_at
+     FROM users WHERE role = 'cajero' AND active = 1 ORDER BY name`
+  );
+}
 async function changeOwnPassword(userId, current, next) {
   const user = await getRow3("SELECT * FROM users WHERE id = ?", userId);
   if (!user || !verifyPassword(current, user.password_hash)) {
@@ -875,6 +881,9 @@ var init_auth_routes = __esm({
     router = (0, import_express.Router)();
     router.get("/status", asyncHandler(async (_req, res) => {
       res.json({ setup: await needsSetup() });
+    }));
+    router.get("/cashiers", asyncHandler(async (_req, res) => {
+      res.json(await listActiveCashiers());
     }));
     router.post("/setup", async (req, res, next) => {
       try {
