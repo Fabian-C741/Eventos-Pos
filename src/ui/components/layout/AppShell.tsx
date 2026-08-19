@@ -1,7 +1,8 @@
-import { ReactNode } from 'react';
+import { ReactNode, useEffect } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
+import { useAppBrand } from '../../utils/useAppBrand';
 import { APP_VERSION } from '../../../shared/constants';
 
 interface NavItem {
@@ -30,7 +31,12 @@ const NAV: NavItem[] = [
 export function AppShell({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
   const { activeEvent } = useData();
+  const { app_name, login_logo } = useAppBrand();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    document.title = (app_name || 'Eventos POS') + (activeEvent ? ` · ${activeEvent.name}` : '');
+  }, [app_name, activeEvent]);
 
   const items = NAV.filter((n) => !n.roles || (user && n.roles.includes(user.role)));
 
@@ -72,8 +78,16 @@ export function AppShell({ children }: { children: ReactNode }) {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="sidebar-brand">
-          <span className="logo">🎪</span>
-          <span>Eventos POS</span>
+          {login_logo ? (
+            /^(https?:|data:image|\/)/i.test(login_logo) ? (
+              <img className="sidebar-logo-img" src={login_logo} alt="" />
+            ) : (
+              <span className="logo" style={{ fontSize: 16 }}>{login_logo}</span>
+            )
+          ) : (
+            <span className="logo">🎪</span>
+          )}
+          <span>{app_name || 'Eventos POS'}</span>
         </div>
         <nav className="sidebar-nav">{renderNav(true)}</nav>
         <div className="sidebar-version">v{APP_VERSION}</div>

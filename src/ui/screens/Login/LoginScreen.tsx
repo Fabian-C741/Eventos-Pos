@@ -4,18 +4,13 @@ import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { api } from '../../api/client';
 import { Modal } from '../../components/common/Modal';
+import { useAppBrand } from '../../utils/useAppBrand';
 import { APP_VERSION } from '../../../shared/constants';
 import type { User } from '../../../shared/types';
 
 function LoginHeader() {
-  const [cfg, setCfg] = useState<{ app_name?: string; login_logo?: string }>({});
-  useEffect(() => {
-    api
-      .get<{ app_name: string; login_logo: string }>('/auth/login-config')
-      .then(setCfg)
-      .catch(() => {});
-  }, []);
-  const logo = (cfg.login_logo || '').trim();
+  const { app_name, login_logo } = useAppBrand();
+  const logo = (login_logo || '').trim();
   const isImage = /^(https?:|data:image|\/)/i.test(logo);
   return (
     <div className="login-logo">
@@ -32,7 +27,7 @@ function LoginHeader() {
           <span className="brand-mark-text">POS</span>
         </div>
       )}
-      <h1>{cfg.app_name?.trim() || 'Eventos POS'}</h1>
+      <h1>{app_name?.trim() || 'Eventos POS'}</h1>
       <p>Ventas, entradas y recaudación para tu evento</p>
       <p className="muted" style={{ fontSize: 12 }}>v{APP_VERSION}</p>
     </div>
