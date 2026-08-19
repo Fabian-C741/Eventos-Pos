@@ -71,6 +71,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
     refreshEventData();
   }, [refreshEventData]);
 
+  useEffect(() => {
+    const t = setInterval(() => {
+      refreshEventData();
+    }, 15000);
+    return () => clearInterval(t);
+  }, [refreshEventData]);
+
   const setActiveEvent = useCallback((id: number | null) => {
     if (id === null) {
       localStorage.removeItem('epos_active_event');
