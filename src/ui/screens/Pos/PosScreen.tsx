@@ -47,12 +47,34 @@ export function PosScreen() {
   const saleSound = useRef<AudioContext | null>(null);
 
   const activeBoxes = useMemo(() => boxes.filter((b) => b.active === 1), [boxes]);
-  const activeCategories = useMemo(() => categories.filter((c) => c.active === 1), [categories]);
-  const activeProducts = useMemo(
-    () => products.filter((p) => p.active === 1 && (selectedCat === 'all' || p.category_id === selectedCat)),
-    [products, selectedCat],
+  const pos = useMemo(() => {
+    const cats = user?.pos_categories == null ? null : user.pos_categories.split(',').map(Number).filter(Boolean);
+    return { unlimited: cats === null, cats, tickets: user?.pos_tickets !== 0 };
+  }, [user?.pos_categories, user?.pos_tickets]);
+  const activeCategories = useMemo(
+    () => categories.filter((c) => c.active === 1 && (pos.unlimited || pos.cats!.includes(c.id))),
+    [categories, pos],
   );
-  const activeTickets = useMemo(() => ticketTypes.filter((t) => t.active === 1), [ticketTypes]);
+  const activeProducts = useMemo(
+    () =>
+      products.filter(
+        (p) =>
+          p.active === 1 &&
+          p.category_id != null &&
+          (selectedCat === 'all'
+            ? pos.unlimited || pos.cats!.includes(p.category_id)
+            : selectedCat === 'tickets'
+              ? false
+              : p.category_id === selectedCat && (pos.unlimited || pos.cats!.includes(selectedCat))),
+      ),
+    [products, selectedCat, pos],
+  );
+  const activeTickets = useMemo(() => (pos.tickets ? ticketTypes.filter((t) => t.active === 1) : []), [ticketTypes, pos.tickets]);
+
+  useEffect(() => {
+    if (selectedCat === 'tickets' && !pos.tickets) setSelectedCat('all');
+    else if (typeof selectedCat === 'number' && !pos.unlimited && !pos.cats!.includes(selectedCat)) setSelectedCat('all');
+  }, [selectedCat, pos]);
 
   const cartTotal = useMemo(
     () => items.reduce((s, i) => s + i.unit_price * i.quantity, 0) + tickets.reduce((s, t) => s + t.unit_price * t.quantity, 0),

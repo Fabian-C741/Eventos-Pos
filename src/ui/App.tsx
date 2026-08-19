@@ -152,9 +152,9 @@ export function App() {
       <Route
         path="/config"
         element={
-          <SuperadminRoute>
+          <AdminRoute>
             <ConfigScreen />
-          </SuperadminRoute>
+          </AdminRoute>
         }
       />
       <Route path="*" element={<NotFoundScreen />} />

@@ -12,6 +12,8 @@ export interface User {
   active: number;
   created_at: string;
   last_login_at: string | null;
+  pos_categories?: string | null;
+  pos_tickets?: number | null;
 }
 
 export interface Event {
@@ -186,6 +188,8 @@ export interface SessionUser {
   username: string;
   name: string;
   role: Role;
+  pos_categories?: string | null;
+  pos_tickets?: number | null;
 }
 
 export interface AppSettings {
@@ -195,6 +199,7 @@ export interface AppSettings {
   device_name: string;
   currency_symbol: string;
   receipt_footer: string;
+  login_logo: string;
 }
 
 export interface DashboardData {

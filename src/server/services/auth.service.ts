@@ -128,7 +128,7 @@ async function createSession(user: User, device: string): Promise<{ token: strin
 export async function validateSession(token: string): Promise<User | null> {
   if (!token) return null;
   const row = await getRow<User>(
-    `SELECT u.id, u.username, u.name, u.role, u.active, u.created_at, u.last_login_at
+    `SELECT u.id, u.username, u.name, u.role, u.active, u.created_at, u.last_login_at, u.pos_categories, u.pos_tickets
      FROM sessions s JOIN users u ON u.id = s.user_id
      WHERE s.token = ? AND s.expires_at > ?`,
     token,
@@ -150,7 +150,7 @@ export async function cleanupSessions() {
 export async function listUsers(actorRole: Role): Promise<User[]> {
   const filter = actorRole === 'superadmin' ? '' : "WHERE role IN ('admin','cajero')";
   return allRows<User>(
-    `SELECT id, username, name, role, active, created_at, last_login_at
+    `SELECT id, username, name, role, active, pos_categories, pos_tickets, created_at, last_login_at
      FROM users ${filter} ORDER BY CASE role WHEN 'superadmin' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, name`,
   );
 }
@@ -161,6 +161,8 @@ export async function createUser(input: {
   role: Role;
   password?: string;
   pin?: string;
+  pos_categories?: string;
+  pos_tickets?: number;
 }, actorRole: Role): Promise<number> {
   const { username, name, role } = input;
   const usernameNorm = username.trim().toLowerCase();
@@ -180,16 +182,18 @@ export async function createUser(input: {
     pwd = hashPassword(input.password);
   }
   const res = await exec(
-    'INSERT INTO users (username, password_hash, role, name) VALUES (?, ?, ?, ?)',
+    'INSERT INTO users (username, password_hash, role, name, pos_categories, pos_tickets) VALUES (?, ?, ?, ?, ?, ?)',
     usernameNorm,
     pwd,
     role,
     name.trim() || usernameNorm,
+    role === 'cajero' ? input.pos_categories ?? null : null,
+    role === 'cajero' ? (input.pos_tickets ?? 1) : 1,
   );
   return res.lastInsertRowid;
 }
 
-export async function updateUser(id: number, input: { name?: string; active?: number; password?: string; pin?: string }, actorRole: Role, actorId: number) {
+export async function updateUser(id: number, input: { name?: string; active?: number; password?: string; pin?: string; pos_categories?: string; pos_tickets?: number }, actorRole: Role, actorId: number) {
   const target = await getRow<User>('SELECT * FROM users WHERE id = ?', id);
   if (!target) throw BadRequest('Usuario no encontrado');
   if (target.role === 'superadmin' && target.id !== actorId) throw BadRequest('No podés modificar al superadministrador');
@@ -204,6 +208,8 @@ export async function updateUser(id: number, input: { name?: string; active?: nu
     if (!safePin(input.pin)) throw BadRequest('El PIN debe tener 4 dígitos');
     await exec('UPDATE users SET password_hash = ? WHERE id = ?', hashPassword(input.pin), id);
   }
+  if (input.pos_categories !== undefined) await exec('UPDATE users SET pos_categories = ? WHERE id = ?', input.pos_categories, id);
+  if (input.pos_tickets !== undefined) await exec('UPDATE users SET pos_tickets = ? WHERE id = ?', input.pos_tickets ? 1 : 0, id);
   return true;
 }
 
@@ -223,7 +229,7 @@ export async function deleteUser(id: number, actorRole: Role, actorId: number) {
 
 export async function listActiveCashiers(): Promise<User[]> {
   return allRows<User>(
-    `SELECT id, username, name, role, active, created_at, last_login_at
+    `SELECT id, username, name, role, active, pos_categories, pos_tickets, created_at, last_login_at
      FROM users WHERE role = 'cajero' AND active = 1 ORDER BY name`,
   );
 }

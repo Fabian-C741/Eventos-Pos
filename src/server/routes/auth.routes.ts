@@ -13,8 +13,13 @@ import { audit } from '../services/audit.service';
 import { requireAuth, attachDevice, AuthedRequest, asyncHandler } from '../auth';
 import { logger } from '../logger';
 import { initSequenceCounters } from '../services/auth.service';
+import { getSetting } from '../services/settings.service';
 
 const router = Router();
+
+router.get('/login-config', asyncHandler(async (_req, res) => {
+  res.json({ app_name: await getSetting('app_name'), login_logo: await getSetting('login_logo') });
+}));
 
 router.get('/status', asyncHandler(async (_req, res) => {
   res.json({ setup: await needsSetup() });

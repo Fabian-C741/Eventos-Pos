@@ -10,6 +10,7 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   device_name: 'Caja central',
   currency_symbol: '$',
   receipt_footer: '',
+  login_logo: '',
 };
 
 export async function getSetting(key: string): Promise<string> {
@@ -31,6 +32,7 @@ export async function getSettings(): Promise<AppSettings> {
     device_name: await getSetting('device_name'),
     currency_symbol: await getSetting('currency_symbol'),
     receipt_footer: await getSetting('receipt_footer'),
+    login_logo: await getSetting('login_logo'),
   };
 }
 

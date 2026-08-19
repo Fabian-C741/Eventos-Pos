@@ -158,6 +158,9 @@ async function initDb(config = {}) {
   db.exec("PRAGMA synchronous = NORMAL");
   const schema = (0, import_fs2.readFileSync)(schemaFile(), "utf8");
   db.exec(schema);
+  const userCols = new Set(db.prepare("PRAGMA table_info(users)").all().map((c) => c.name));
+  if (!userCols.has("pos_categories")) db.exec("ALTER TABLE users ADD COLUMN pos_categories TEXT");
+  if (!userCols.has("pos_tickets")) db.exec("ALTER TABLE users ADD COLUMN pos_tickets INTEGER NOT NULL DEFAULT 1");
   logger.info("db", `Base de datos inicializada en ${dbPath}`);
   return db;
 }
@@ -362,6 +365,12 @@ async function initDb2(_config = {}) {
       }
     }
   });
+  try {
+    await sql.unsafe(
+      "ALTER TABLE users ADD COLUMN IF NOT EXISTS pos_categories TEXT; ALTER TABLE users ADD COLUMN IF NOT EXISTS pos_tickets INTEGER NOT NULL DEFAULT 1;"
+    );
+  } catch {
+  }
   logger.info("db", "Conexi\xF3n a Postgres inicializada");
   return sql;
 }
@@ -676,7 +685,7 @@ async function createSession(user, device) {
 async function validateSession(token) {
   if (!token) return null;
   const row = await getRow3(
-    `SELECT u.id, u.username, u.name, u.role, u.active, u.created_at, u.last_login_at
+    `SELECT u.id, u.username, u.name, u.role, u.active, u.created_at, u.last_login_at, u.pos_categories, u.pos_tickets
      FROM sessions s JOIN users u ON u.id = s.user_id
      WHERE s.token = ? AND s.expires_at > ?`,
     token,
@@ -692,7 +701,7 @@ async function logout(token) {
 async function listUsers(actorRole) {
   const filter = actorRole === "superadmin" ? "" : "WHERE role IN ('admin','cajero')";
   return allRows3(
-    `SELECT id, username, name, role, active, created_at, last_login_at
+    `SELECT id, username, name, role, active, pos_categories, pos_tickets, created_at, last_login_at
      FROM users ${filter} ORDER BY CASE role WHEN 'superadmin' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, name`
   );
 }
@@ -715,11 +724,13 @@ async function createUser(input, actorRole) {
     pwd = hashPassword(input.password);
   }
   const res = await exec3(
-    "INSERT INTO users (username, password_hash, role, name) VALUES (?, ?, ?, ?)",
+    "INSERT INTO users (username, password_hash, role, name, pos_categories, pos_tickets) VALUES (?, ?, ?, ?, ?, ?)",
     usernameNorm,
     pwd,
     role,
-    name.trim() || usernameNorm
+    name.trim() || usernameNorm,
+    role === "cajero" ? input.pos_categories ?? null : null,
+    role === "cajero" ? input.pos_tickets ?? 1 : 1
   );
   return res.lastInsertRowid;
 }
@@ -738,6 +749,8 @@ async function updateUser(id, input, actorRole, actorId) {
     if (!safePin(input.pin)) throw BadRequest("El PIN debe tener 4 d\xEDgitos");
     await exec3("UPDATE users SET password_hash = ? WHERE id = ?", hashPassword(input.pin), id);
   }
+  if (input.pos_categories !== void 0) await exec3("UPDATE users SET pos_categories = ? WHERE id = ?", input.pos_categories, id);
+  if (input.pos_tickets !== void 0) await exec3("UPDATE users SET pos_tickets = ? WHERE id = ?", input.pos_tickets ? 1 : 0, id);
   return true;
 }
 async function deleteUser(id, actorRole, actorId) {
@@ -755,7 +768,7 @@ async function deleteUser(id, actorRole, actorId) {
 }
 async function listActiveCashiers() {
   return allRows3(
-    `SELECT id, username, name, role, active, created_at, last_login_at
+    `SELECT id, username, name, role, active, pos_categories, pos_tickets, created_at, last_login_at
      FROM users WHERE role = 'cajero' AND active = 1 ORDER BY name`
   );
 }
@@ -866,6 +879,134 @@ var init_auth = __esm({
   }
 });
 
+// src/server/services/settings.service.ts
+var settings_service_exports = {};
+__export(settings_service_exports, {
+  clearAppLogs: () => clearAppLogs,
+  getSetting: () => getSetting,
+  getSettings: () => getSettings,
+  listAppLogs: () => listAppLogs,
+  listAudit: () => listAudit,
+  pruneAppLogs: () => pruneAppLogs,
+  setSetting: () => setSetting
+});
+async function getSetting(key) {
+  const row = await getRow3("SELECT value FROM settings WHERE key = ?", key);
+  if (row) return row.value;
+  const def = DEFAULT_SETTINGS[key];
+  if (def !== void 0) {
+    await exec3("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", key, def);
+    return def;
+  }
+  return "";
+}
+async function getSettings() {
+  return {
+    app_name: await getSetting("app_name"),
+    sound_enabled: await getSetting("sound_enabled"),
+    auto_backup: await getSetting("auto_backup"),
+    device_name: await getSetting("device_name"),
+    currency_symbol: await getSetting("currency_symbol"),
+    receipt_footer: await getSetting("receipt_footer"),
+    login_logo: await getSetting("login_logo")
+  };
+}
+async function setSetting(key, value, userId) {
+  const allowed = Object.keys(DEFAULT_SETTINGS);
+  if (!allowed.includes(key)) throw BadRequest("Configuraci\xF3n no v\xE1lida");
+  await exec3("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", key, String(value).slice(0, 200));
+  await audit(userId, "update", "settings", null, { key });
+  return true;
+}
+async function clearAppLogs() {
+  await exec3("DELETE FROM app_logs");
+  return true;
+}
+async function pruneAppLogs(days = 30) {
+  await exec3("DELETE FROM app_logs WHERE created_at < ?", new Date(Date.now() - days * 24 * 60 * 60 * 1e3).toISOString());
+  return true;
+}
+async function listAppLogs(filters) {
+  const now = Date.now();
+  if (now - lastLogPrune > 60 * 60 * 1e3) {
+    lastLogPrune = now;
+    try {
+      await pruneAppLogs();
+    } catch {
+    }
+  }
+  const where = [];
+  const params = [];
+  if (filters.level) {
+    where.push("level = ?");
+    params.push(filters.level);
+  }
+  if (filters.module) {
+    where.push("module LIKE ?");
+    params.push("%" + filters.module + "%");
+  }
+  if (filters.from) {
+    where.push("created_at >= ?");
+    params.push(filters.from + " 00:00:00");
+  }
+  if (filters.to) {
+    where.push("created_at <= ?");
+    params.push(filters.to + " 23:59:59");
+  }
+  const whereSql = where.length ? "WHERE " + where.join(" AND ") : "";
+  const limit = Math.min(filters.limit ?? 200, 1e3);
+  return allRows3(
+    `SELECT id, level, module, message, details, user_id, device, created_at
+     FROM app_logs ${whereSql} ORDER BY id DESC LIMIT ?`,
+    ...params,
+    limit
+  );
+}
+async function listAudit(filters) {
+  const where = [];
+  const params = [];
+  if (filters.user_id) {
+    where.push("user_id = ?");
+    params.push(filters.user_id);
+  }
+  if (filters.from) {
+    where.push("created_at >= ?");
+    params.push(filters.from + " 00:00:00");
+  }
+  if (filters.to) {
+    where.push("created_at <= ?");
+    params.push(filters.to + " 23:59:59");
+  }
+  const whereSql = where.length ? "WHERE " + where.join(" AND ") : "";
+  const limit = Math.min(filters.limit ?? 200, 1e3);
+  return allRows3(
+    `SELECT a.id, a.user_id, u.name AS user_name, a.action, a.entity, a.entity_id, a.details, a.created_at
+     FROM audit_log a LEFT JOIN users u ON u.id = a.user_id
+     ${whereSql} ORDER BY a.id DESC LIMIT ?`,
+    ...params,
+    limit
+  );
+}
+var DEFAULT_SETTINGS, lastLogPrune;
+var init_settings_service = __esm({
+  "src/server/services/settings.service.ts"() {
+    "use strict";
+    init_errors();
+    init_db();
+    init_audit_service();
+    DEFAULT_SETTINGS = {
+      app_name: "Eventos POS",
+      sound_enabled: "1",
+      auto_backup: "1",
+      device_name: "Caja central",
+      currency_symbol: "$",
+      receipt_footer: "",
+      login_logo: ""
+    };
+    lastLogPrune = 0;
+  }
+});
+
 // src/server/routes/auth.routes.ts
 var import_express, router, auth_routes_default;
 var init_auth_routes = __esm({
@@ -878,7 +1019,11 @@ var init_auth_routes = __esm({
     init_auth();
     init_logger();
     init_auth_service();
+    init_settings_service();
     router = (0, import_express.Router)();
+    router.get("/login-config", asyncHandler(async (_req, res) => {
+      res.json({ app_name: await getSetting("app_name"), login_logo: await getSetting("login_logo") });
+    }));
     router.get("/status", asyncHandler(async (_req, res) => {
       res.json({ setup: await needsSetup() });
     }));
@@ -1328,12 +1473,12 @@ var init_data_routes = __esm({
     }));
     router2.post("/users", requireRole("superadmin", "admin"), async (req, res, next) => {
       try {
-        const { username, name, role, password, pin } = req.body;
+        const { username, name, role, password, pin, pos_categories, pos_tickets } = req.body;
         if (req.user.role !== "superadmin" && role !== "cajero") {
           res.status(403).json({ error: "Solo el superadministrador puede crear administradores", code: "FORBIDDEN" });
           return;
         }
-        const id = await createUser({ username, name, role, password, pin }, req.user.role);
+        const id = await createUser({ username, name, role, password, pin, pos_categories, pos_tickets }, req.user.role);
         res.json({ id });
       } catch (e) {
         next(e);
@@ -2551,132 +2696,6 @@ var init_dashboard_routes = __esm({
   }
 });
 
-// src/server/services/settings.service.ts
-var settings_service_exports = {};
-__export(settings_service_exports, {
-  clearAppLogs: () => clearAppLogs,
-  getSetting: () => getSetting,
-  getSettings: () => getSettings,
-  listAppLogs: () => listAppLogs,
-  listAudit: () => listAudit,
-  pruneAppLogs: () => pruneAppLogs,
-  setSetting: () => setSetting
-});
-async function getSetting(key) {
-  const row = await getRow3("SELECT value FROM settings WHERE key = ?", key);
-  if (row) return row.value;
-  const def = DEFAULT_SETTINGS[key];
-  if (def !== void 0) {
-    await exec3("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", key, def);
-    return def;
-  }
-  return "";
-}
-async function getSettings() {
-  return {
-    app_name: await getSetting("app_name"),
-    sound_enabled: await getSetting("sound_enabled"),
-    auto_backup: await getSetting("auto_backup"),
-    device_name: await getSetting("device_name"),
-    currency_symbol: await getSetting("currency_symbol"),
-    receipt_footer: await getSetting("receipt_footer")
-  };
-}
-async function setSetting(key, value, userId) {
-  const allowed = Object.keys(DEFAULT_SETTINGS);
-  if (!allowed.includes(key)) throw BadRequest("Configuraci\xF3n no v\xE1lida");
-  await exec3("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", key, String(value).slice(0, 200));
-  await audit(userId, "update", "settings", null, { key });
-  return true;
-}
-async function clearAppLogs() {
-  await exec3("DELETE FROM app_logs");
-  return true;
-}
-async function pruneAppLogs(days = 30) {
-  await exec3("DELETE FROM app_logs WHERE created_at < ?", new Date(Date.now() - days * 24 * 60 * 60 * 1e3).toISOString());
-  return true;
-}
-async function listAppLogs(filters) {
-  const now = Date.now();
-  if (now - lastLogPrune > 60 * 60 * 1e3) {
-    lastLogPrune = now;
-    try {
-      await pruneAppLogs();
-    } catch {
-    }
-  }
-  const where = [];
-  const params = [];
-  if (filters.level) {
-    where.push("level = ?");
-    params.push(filters.level);
-  }
-  if (filters.module) {
-    where.push("module LIKE ?");
-    params.push("%" + filters.module + "%");
-  }
-  if (filters.from) {
-    where.push("created_at >= ?");
-    params.push(filters.from + " 00:00:00");
-  }
-  if (filters.to) {
-    where.push("created_at <= ?");
-    params.push(filters.to + " 23:59:59");
-  }
-  const whereSql = where.length ? "WHERE " + where.join(" AND ") : "";
-  const limit = Math.min(filters.limit ?? 200, 1e3);
-  return allRows3(
-    `SELECT id, level, module, message, details, user_id, device, created_at
-     FROM app_logs ${whereSql} ORDER BY id DESC LIMIT ?`,
-    ...params,
-    limit
-  );
-}
-async function listAudit(filters) {
-  const where = [];
-  const params = [];
-  if (filters.user_id) {
-    where.push("user_id = ?");
-    params.push(filters.user_id);
-  }
-  if (filters.from) {
-    where.push("created_at >= ?");
-    params.push(filters.from + " 00:00:00");
-  }
-  if (filters.to) {
-    where.push("created_at <= ?");
-    params.push(filters.to + " 23:59:59");
-  }
-  const whereSql = where.length ? "WHERE " + where.join(" AND ") : "";
-  const limit = Math.min(filters.limit ?? 200, 1e3);
-  return allRows3(
-    `SELECT a.id, a.user_id, u.name AS user_name, a.action, a.entity, a.entity_id, a.details, a.created_at
-     FROM audit_log a LEFT JOIN users u ON u.id = a.user_id
-     ${whereSql} ORDER BY a.id DESC LIMIT ?`,
-    ...params,
-    limit
-  );
-}
-var DEFAULT_SETTINGS, lastLogPrune;
-var init_settings_service = __esm({
-  "src/server/services/settings.service.ts"() {
-    "use strict";
-    init_errors();
-    init_db();
-    init_audit_service();
-    DEFAULT_SETTINGS = {
-      app_name: "Eventos POS",
-      sound_enabled: "1",
-      auto_backup: "1",
-      device_name: "Caja central",
-      currency_symbol: "$",
-      receipt_footer: ""
-    };
-    lastLogPrune = 0;
-  }
-});
-
 // src/server/services/backup.service.ts
 function cloudDisabled(what) {
   throw BadRequest(`En la versi\xF3n nube los backups se manejan con los nativos de ${what === "Supabase" ? "Supabase" : "la plataforma"}.`);
@@ -2800,10 +2819,10 @@ var init_system_routes = __esm({
     router6.use(requireAuth);
     IS_CLOUD2 = !!process.env.DATABASE_URL;
     backup = initBackupService();
-    router6.get("/settings", requireRole("superadmin"), async (_req, res) => {
+    router6.get("/settings", requireRole("superadmin", "admin"), async (_req, res) => {
       res.json(await getSettings());
     });
-    router6.put("/settings", requireRole("superadmin"), async (req, res, next) => {
+    router6.put("/settings", requireRole("superadmin", "admin"), async (req, res, next) => {
       try {
         const body = req.body || {};
         if ("key" in body && "value" in body) {

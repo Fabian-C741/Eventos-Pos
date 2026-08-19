@@ -387,3 +387,69 @@ test('editar cajero: cambiar solo el nombre respeta el PIN actual', async () => 
   assert.equal(login2.status, 200);
   assert.equal(login2.json.user.name, 'Ana Final');
 });
+
+test('puesto del cajero: guarda categorías y entradas asignadas', async () => {
+  const r = await api('POST', '/users', {
+    username: 'cajero_puesto',
+    name: 'Cajero Barra',
+    role: 'cajero',
+    pin: '1111',
+    pos_categories: String(catId),
+    pos_tickets: 0,
+  });
+  assert.equal(r.status, 200);
+
+  const list = await api('GET', '/users');
+  const cajero = list.json.find((u: { username: string }) => u.username === 'cajero_puesto');
+  assert.ok(cajero);
+  assert.equal(cajero.pos_categories, String(catId));
+  assert.equal(cajero.pos_tickets, 0);
+
+  const login = await api('POST', '/auth/login/pin', { username: 'cajero_puesto', pin: '1111' }, false);
+  assert.equal(login.status, 200);
+  assert.equal(login.json.user.pos_categories, String(catId));
+  assert.equal(login.json.user.pos_tickets, 0);
+
+  const upd = await api('PUT', `/users/${cajero.id}`, { pos_categories: '', pos_tickets: 1 });
+  assert.equal(upd.status, 200);
+  const list2 = await api('GET', '/users');
+  const updated = list2.json.find((u: { username: string }) => u.username === 'cajero_puesto');
+  assert.equal(updated.pos_categories, '');
+  assert.equal(updated.pos_tickets, 1);
+});
+
+test('cajero sin puesto asignado ve todo (pos_categories null)', async () => {
+  const r = await api('POST', '/users', { username: 'cajero_todo', name: 'Cajero Todo', role: 'cajero', pin: '2222' });
+  assert.equal(r.status, 200);
+  const list = await api('GET', '/users');
+  const cajero = list.json.find((u: { username: string }) => u.username === 'cajero_todo');
+  assert.equal(cajero.pos_categories, null);
+  assert.equal(cajero.pos_tickets, 1);
+});
+
+test('login-config público devuelve nombre y logo personalizable', async () => {
+  let r = await api('GET', '/auth/login-config', undefined, false);
+  assert.equal(r.status, 200);
+  assert.equal(typeof r.json.app_name, 'string');
+
+  const put = await api('PUT', '/settings', { login_logo: '🎪' });
+  assert.equal(put.status, 200);
+  assert.equal(put.json.login_logo, '🎪');
+
+  r = await api('GET', '/auth/login-config', undefined, false);
+  assert.equal(r.json.login_logo, '🎪');
+});
+
+test('admin puede ver y editar configuración', async () => {
+  const login = await api('POST', '/auth/login', { username: 'admin1', password: 'clave123' }, false);
+  const adminToken = login.json.token;
+  const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` };
+  const res = await fetch(base + '/settings', { headers });
+  assert.equal(res.status, 200);
+  const put = await fetch(base + '/settings', {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify({ login_logo: 'https://ejemplo.com/logo.png' }),
+  });
+  assert.equal(put.status, 200);
+});

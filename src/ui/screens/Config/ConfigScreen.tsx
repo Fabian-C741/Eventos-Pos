@@ -7,18 +7,19 @@ interface AppSettings {
   app_name: string;
   currency_symbol: string;
   receipt_footer: string;
+  login_logo: string;
 }
 
 export function ConfigScreen() {
   const { push } = useToast();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState<AppSettings>({ app_name: '', currency_symbol: '$', receipt_footer: '' });
+  const [form, setForm] = useState<AppSettings>({ app_name: '', currency_symbol: '$', receipt_footer: '', login_logo: '' });
 
   useEffect(() => {
     api
       .get<Partial<AppSettings>>('/settings')
-      .then((s) => setForm({ app_name: s.app_name ?? '', currency_symbol: s.currency_symbol ?? '$', receipt_footer: s.receipt_footer ?? '' }))
+      .then((s) => setForm({ app_name: s.app_name ?? '', currency_symbol: s.currency_symbol ?? '$', receipt_footer: s.receipt_footer ?? '', login_logo: s.login_logo ?? '' }))
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
@@ -30,6 +31,7 @@ export function ConfigScreen() {
         app_name: form.app_name.trim() || 'Sistema de Eventos',
         currency_symbol: form.currency_symbol.trim() || '$',
         receipt_footer: form.receipt_footer.trim(),
+        login_logo: form.login_logo.trim(),
       });
       push('success', 'Configuración guardada');
     } catch (e) {
@@ -59,6 +61,11 @@ export function ConfigScreen() {
           <label style={{ display: 'block' }}>
             <span style={{ fontWeight: 700, fontSize: 13.5, display: 'block', marginBottom: 6 }}>Mensaje al pie del recibo (opcional)</span>
             <textarea className="input" rows={3} value={form.receipt_footer} onChange={(e) => setForm({ ...form, receipt_footer: e.target.value })} placeholder="Ej: ¡Gracias por tu visita! Reclamos: 11-5555-5555" />
+          </label>
+          <label style={{ display: 'block' }}>
+            <span style={{ fontWeight: 700, fontSize: 13.5, display: 'block', marginBottom: 6 }}>Logo del login (emoji, texto o URL de imagen)</span>
+            <input className="input" value={form.login_logo} onChange={(e) => setForm({ ...form, login_logo: e.target.value })} placeholder="Ej: 🎪 o https://tusitio.com/logo.png" />
+            <span style={{ fontSize: 12, color: 'var(--muted)' }}>Aparece arriba del nombre del sistema en la pantalla de acceso.</span>
           </label>
         </div>
 

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { useData } from '../../context/DataContext';
 import { useToast } from '../../context/ToastContext';
 import { api } from '../../api/client';
 import { EmptyState, PageHeader, Field } from '../../components/common/ui';
@@ -10,6 +11,7 @@ import type { User, Role } from '../../../shared/types';
 
 export function UsersScreen() {
   const { user: me } = useAuth();
+  const { categories, activeEvent } = useData();
   const { push } = useToast();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -17,6 +19,9 @@ export function UsersScreen() {
   const [editing, setEditing] = useState<User | null>(null);
   const [deleting, setDeleting] = useState<User | null>(null);
   const [form, setForm] = useState({ username: '', name: '', role: 'cajero' as Role, password: '', pin: '', active: 1 });
+  const [posCats, setPosCats] = useState<number[]>([]);
+  const [posTickets, setPosTickets] = useState(true);
+  const [posUnlimited, setPosUnlimited] = useState(true);
 
   const load = async () => {
     setLoading(true);
@@ -35,11 +40,17 @@ export function UsersScreen() {
 
   const openCreate = () => {
     setForm({ username: '', name: '', role: me?.role === 'superadmin' ? 'admin' : 'cajero', password: '', pin: '', active: 1 });
+    setPosCats([]);
+    setPosTickets(true);
+    setPosUnlimited(true);
     setCreating(true);
   };
 
   const openEdit = (u: User) => {
     setForm({ username: u.username, name: u.name, role: u.role, password: '', pin: '', active: u.active });
+    setPosCats((u.pos_categories || '').split(',').map(Number).filter(Boolean));
+    setPosTickets(u.pos_tickets !== 0);
+    setPosUnlimited(u.pos_categories == null);
     setEditing(u);
   };
 
@@ -52,15 +63,24 @@ export function UsersScreen() {
         const payload: Record<string, unknown> = { name: form.name, active: form.active };
         if (form.role === 'cajero' && form.pin) payload.pin = form.pin;
         if (form.role !== 'cajero' && form.password) payload.password = form.password;
+        if (form.role === 'cajero') {
+          payload.pos_categories = posUnlimited ? null : posCats.join(',');
+          payload.pos_tickets = posUnlimited ? 1 : posTickets ? 1 : 0;
+        }
         await api.put(`/users/${editing.id}`, payload);
         push('success', 'Usuario actualizado');
       } else {
-        await api.post('/users', {
+        const body: Record<string, unknown> = {
           username: form.username,
           name: form.name,
           role: form.role,
           ...(form.role === 'cajero' ? { pin: form.pin } : { password: form.password }),
-        });
+        };
+        if (form.role === 'cajero') {
+          body.pos_categories = posUnlimited ? null : posCats.join(',');
+          body.pos_tickets = posUnlimited ? 1 : posTickets ? 1 : 0;
+        }
+        await api.post('/users', body);
         push('success', 'Usuario creado');
       }
       setCreating(false);
@@ -150,6 +170,45 @@ export function UsersScreen() {
           <Field label={editing ? 'Nueva contraseña (dejar vacío para no cambiar)' : 'Contraseña *'}>
             <input className="input" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Mínimo 6 caracteres" />
           </Field>
+        )}
+
+        {form.role === 'cajero' && (
+          <div className="card" style={{ marginBottom: 16 }}>
+            <div style={{ fontWeight: 800, marginBottom: 4 }}>Puesto del cajero</div>
+            <p className="muted" style={{ fontSize: 12.5, marginBottom: 10 }}>
+              Elegí qué vende este cajero. En el POS solo va a ver lo que asignes aquí.
+            </p>
+            <label className="row" style={{ marginBottom: 8 }}>
+              <input type="checkbox" checked={posUnlimited} onChange={(e) => setPosUnlimited(e.target.checked)} />
+              <span style={{ fontWeight: 700 }}>Ve todo el evento (sin restricciones)</span>
+            </label>
+            <div style={{ opacity: posUnlimited ? 0.45 : 1, pointerEvents: posUnlimited ? 'none' : 'auto' }}>
+              <label className="row" style={{ marginBottom: 8 }}>
+                <input type="checkbox" checked={posTickets} onChange={(e) => setPosTickets(e.target.checked)} />
+                <span style={{ fontWeight: 700 }}>🎟 Vende entradas</span>
+              </label>
+              {!activeEvent ? (
+                <p className="muted" style={{ fontSize: 12.5 }}>Sin evento activo: creá un evento y sus categorías para asignar el puesto.</p>
+              ) : categories.length === 0 ? (
+                <p className="muted" style={{ fontSize: 12.5 }}>El evento actual no tiene categorías todavía.</p>
+              ) : (
+                <div className="grid grid-2">
+                  {categories.filter((c) => c.active === 1).map((c) => (
+                    <label key={c.id} className="row">
+                      <input
+                        type="checkbox"
+                        checked={posCats.includes(c.id)}
+                        onChange={(e) =>
+                          setPosCats((prev) => (e.target.checked ? [...prev, c.id] : prev.filter((x) => x !== c.id)))
+                        }
+                      />
+                      <span style={{ fontSize: 13.5 }}>{c.name}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         )}
 
         {editing && (

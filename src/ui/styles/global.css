@@ -903,6 +903,15 @@ table.table {
   letter-spacing: 0.5px;
 }
 
+.login-brand-img {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 14px;
+  object-fit: contain;
+  border-radius: 14px;
+  display: block;
+}
+
 .role-title {
   text-align: center;
   font-weight: 800;

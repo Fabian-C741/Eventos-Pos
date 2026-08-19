@@ -112,6 +112,13 @@ export async function initDb(_config: DbConfig = {}) {
       },
     },
   } as never);
+  try {
+    await sql.unsafe(
+      'ALTER TABLE users ADD COLUMN IF NOT EXISTS pos_categories TEXT; ALTER TABLE users ADD COLUMN IF NOT EXISTS pos_tickets INTEGER NOT NULL DEFAULT 1;',
+    );
+  } catch {
+    /* noop: la tabla o columnas ya pueden existir */
+  }
   logger.info('db', 'Conexión a Postgres inicializada');
   return sql;
 }

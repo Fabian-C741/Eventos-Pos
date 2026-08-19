@@ -18,12 +18,12 @@ router.get('/users', requireRole('superadmin', 'admin'), asyncHandler(async (req
 
 router.post('/users', requireRole('superadmin', 'admin'), async (req: AuthedRequest, res, next) => {
   try {
-    const { username, name, role, password, pin } = req.body;
+    const { username, name, role, password, pin, pos_categories, pos_tickets } = req.body;
     if (req.user!.role !== 'superadmin' && role !== 'cajero') {
       res.status(403).json({ error: 'Solo el superadministrador puede crear administradores', code: 'FORBIDDEN' });
       return;
     }
-    const id = await usersSvc.createUser({ username, name, role, password, pin }, req.user!.role);
+    const id = await usersSvc.createUser({ username, name, role, password, pin, pos_categories, pos_tickets }, req.user!.role);
     res.json({ id });
   } catch (e) {
     next(e);

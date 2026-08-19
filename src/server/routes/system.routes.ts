@@ -14,12 +14,12 @@ router.use(requireAuth);
 const IS_CLOUD = !!process.env.DATABASE_URL;
 const backup = initBackupService();
 
-// ----- Settings (superadmin) -----
-router.get('/settings', requireRole('superadmin'), async (_req, res) => {
+// ----- Settings (superadmin y admin) -----
+router.get('/settings', requireRole('superadmin', 'admin'), async (_req, res) => {
   res.json(await getSettings());
 });
 
-router.put('/settings', requireRole('superadmin'), async (req: AuthedRequest, res, next) => {
+router.put('/settings', requireRole('superadmin', 'admin'), async (req: AuthedRequest, res, next) => {
   try {
     const body = req.body || {};
     if ('key' in body && 'value' in body) {

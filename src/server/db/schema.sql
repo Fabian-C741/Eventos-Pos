@@ -10,6 +10,8 @@ CREATE TABLE IF NOT EXISTS users (
   role TEXT NOT NULL CHECK(role IN ('superadmin','admin','cajero')),
   name TEXT NOT NULL,
   active INTEGER NOT NULL DEFAULT 1,
+  pos_categories TEXT,
+  pos_tickets INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
   last_login_at TEXT
 );

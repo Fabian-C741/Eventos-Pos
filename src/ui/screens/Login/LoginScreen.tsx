@@ -8,12 +8,31 @@ import { APP_VERSION } from '../../../shared/constants';
 import type { User } from '../../../shared/types';
 
 function LoginHeader() {
+  const [cfg, setCfg] = useState<{ app_name?: string; login_logo?: string }>({});
+  useEffect(() => {
+    api
+      .get<{ app_name: string; login_logo: string }>('/auth/login-config')
+      .then(setCfg)
+      .catch(() => {});
+  }, []);
+  const logo = (cfg.login_logo || '').trim();
+  const isImage = /^(https?:|data:image|\/)/i.test(logo);
   return (
     <div className="login-logo">
-      <div className="brand-mark">
-        <span className="brand-mark-text">POS</span>
-      </div>
-      <h1>Eventos POS</h1>
+      {logo ? (
+        isImage ? (
+          <img className="login-brand-img" src={logo} alt="" />
+        ) : (
+          <div className="brand-mark">
+            <span className="brand-mark-text" style={{ fontSize: logo.length > 4 ? 12 : 20 }}>{logo}</span>
+          </div>
+        )
+      ) : (
+        <div className="brand-mark">
+          <span className="brand-mark-text">POS</span>
+        </div>
+      )}
+      <h1>{cfg.app_name?.trim() || 'Eventos POS'}</h1>
       <p>Ventas, entradas y recaudación para tu evento</p>
       <p className="muted" style={{ fontSize: 12 }}>v{APP_VERSION}</p>
     </div>

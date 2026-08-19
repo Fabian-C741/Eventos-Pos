@@ -24,7 +24,7 @@ const NAV: NavItem[] = [
   { to: '/reportes', icon: '📄', label: 'Reportes' },
   { to: '/backups', icon: '💾', label: 'Backups', roles: ['superadmin'] },
   { to: '/logs', icon: '🛠️', label: 'Logs y auditoría', roles: ['superadmin'] },
-  { to: '/config', icon: '⚙️', label: 'Configuración', roles: ['superadmin'] },
+  { to: '/config', icon: '⚙️', label: 'Configuración', roles: ['superadmin', 'admin'] },
 ];
 
 export function AppShell({ children }: { children: ReactNode }) {

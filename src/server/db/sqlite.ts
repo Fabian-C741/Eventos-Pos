@@ -47,6 +47,9 @@ export async function initDb(config: DbConfig = {}) {
   db.exec('PRAGMA synchronous = NORMAL');
   const schema = readFileSync(schemaFile(), 'utf8');
   db.exec(schema);
+  const userCols = new Set((db.prepare('PRAGMA table_info(users)').all() as { name: string }[]).map((c) => c.name));
+  if (!userCols.has('pos_categories')) db.exec('ALTER TABLE users ADD COLUMN pos_categories TEXT');
+  if (!userCols.has('pos_tickets')) db.exec('ALTER TABLE users ADD COLUMN pos_tickets INTEGER NOT NULL DEFAULT 1');
   logger.info('db', `Base de datos inicializada en ${dbPath}`);
   return db;
 }
