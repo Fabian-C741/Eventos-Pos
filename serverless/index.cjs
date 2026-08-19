@@ -1847,7 +1847,8 @@ async function computeCloseSummary(closeId) {
   if (!close) throw BadRequest("Cierre no encontrado");
   const rows = await allRows3(
     `SELECT s.payment_method, COALESCE(SUM(s.total), 0) AS total
-     FROM sales s WHERE s.box_id = ? AND s.status = 'activa' AND s.created_at >= ?`,
+     FROM sales s WHERE s.box_id = ? AND s.status = 'activa' AND s.created_at >= ?
+     GROUP BY s.payment_method`,
     close.box_id,
     close.opened_at
   );
@@ -2373,8 +2374,29 @@ async function reportePagos(f) {
   };
 }
 async function reporteCierres(f) {
-  const { where, params } = buildWhere(f, false);
-  const extra = f.event_id ? "AND c.event_id = ?" : "";
+  const where = [];
+  const params = [];
+  if (f.event_id) {
+    where.push("c.event_id = ?");
+    params.push(f.event_id);
+  }
+  if (f.box_id) {
+    where.push("c.box_id = ?");
+    params.push(f.box_id);
+  }
+  if (f.user_id) {
+    where.push("c.user_id = ?");
+    params.push(f.user_id);
+  }
+  if (f.from) {
+    where.push("c.opened_at >= ?");
+    params.push(f.from + " 00:00:00");
+  }
+  if (f.to) {
+    where.push("c.closed_at <= ?");
+    params.push(f.to + " 23:59:59");
+  }
+  const whereSql = where.length ? "WHERE " + where.join(" AND ") : "";
   const rows = await allRows3(
     `SELECT c.id, b.name AS caja, u.name AS cajero,
        c.opened_at AS apertura, c.closed_at AS cierre,
@@ -2383,9 +2405,8 @@ async function reporteCierres(f) {
      FROM closes c
      LEFT JOIN boxes b ON b.id = c.box_id
      LEFT JOIN users u ON u.id = c.user_id
-     WHERE 1=1 ${extra} ${where.length ? "AND " + where.join(" AND ") : ""}
+     ${whereSql}
      ORDER BY c.id DESC`,
-    ...f.event_id ? [f.event_id] : [],
     ...params
   );
   return {

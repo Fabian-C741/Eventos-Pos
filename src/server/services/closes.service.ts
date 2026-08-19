@@ -29,7 +29,8 @@ export async function computeCloseSummary(closeId: number): Promise<CloseSummary
   if (!close) throw BadRequest('Cierre no encontrado');
   const rows = await allRows<{ payment_method: PaymentMethod; total: number }>(
     `SELECT s.payment_method, COALESCE(SUM(s.total), 0) AS total
-     FROM sales s WHERE s.box_id = ? AND s.status = 'activa' AND s.created_at >= ?`,
+     FROM sales s WHERE s.box_id = ? AND s.status = 'activa' AND s.created_at >= ?
+     GROUP BY s.payment_method`,
     close.box_id,
     close.opened_at,
   );
