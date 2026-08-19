@@ -147,10 +147,11 @@ export async function cleanupSessions() {
   await exec('DELETE FROM sessions WHERE expires_at <= ?', new Date().toISOString());
 }
 
-export async function listUsers(): Promise<User[]> {
+export async function listUsers(actorRole: Role): Promise<User[]> {
+  const filter = actorRole === 'superadmin' ? '' : "WHERE role IN ('admin','cajero')";
   return allRows<User>(
     `SELECT id, username, name, role, active, created_at, last_login_at
-     FROM users ORDER BY CASE role WHEN 'superadmin' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, name`,
+     FROM users ${filter} ORDER BY CASE role WHEN 'superadmin' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, name`,
   );
 }
 

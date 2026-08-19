@@ -232,7 +232,7 @@ export function PosScreen() {
             ⚙ Admin
           </button>
         )}
-        <button className="btn btn-sm btn-ghost" style={{ borderColor: '#334155', color: '#fff' }} onClick={() => logout().then(() => navigate('/login'))}>
+        <button className="btn btn-sm btn-ghost" style={{ borderColor: '#334155', color: '#fff' }} onClick={() => logout().then(() => navigate('/cajero'))}>
           ⎋ Salir
         </button>
       </div>

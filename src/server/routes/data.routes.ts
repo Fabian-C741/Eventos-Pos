@@ -12,8 +12,8 @@ const router = Router();
 router.use(requireAuth);
 
 // ----- Users (superadmin: admins; superadmin/admin: cajeros) -----
-router.get('/users', requireRole('superadmin', 'admin'), asyncHandler(async (_req, res) => {
-  res.json(await usersSvc.listUsers());
+router.get('/users', requireRole('superadmin', 'admin'), asyncHandler(async (req, res) => {
+  res.json(await usersSvc.listUsers(req.user!.role));
 }));
 
 router.post('/users', requireRole('superadmin', 'admin'), async (req: AuthedRequest, res, next) => {

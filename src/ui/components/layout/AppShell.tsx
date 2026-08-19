@@ -91,7 +91,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             className="icon-btn"
             title="Salir"
             style={{ background: 'transparent', border: '1px solid #334155', color: '#fff' }}
-            onClick={() => logout().then(() => navigate('/login'))}
+            onClick={() => { const p = user?.role === 'cajero' ? '/cajero' : user?.role === 'admin' ? '/admin' : '/login'; logout().then(() => navigate(p)); }}
           >
             ⎋
           </button>
