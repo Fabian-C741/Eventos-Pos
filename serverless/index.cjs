@@ -689,10 +689,11 @@ async function validateSession(token) {
 async function logout(token) {
   if (token) await exec3("DELETE FROM sessions WHERE token = ?", token);
 }
-async function listUsers() {
+async function listUsers(actorRole) {
+  const filter = actorRole === "superadmin" ? "" : "WHERE role IN ('admin','cajero')";
   return allRows3(
     `SELECT id, username, name, role, active, created_at, last_login_at
-     FROM users ORDER BY CASE role WHEN 'superadmin' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, name`
+     FROM users ${filter} ORDER BY CASE role WHEN 'superadmin' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, name`
   );
 }
 async function createUser(input, actorRole) {
@@ -1302,8 +1303,8 @@ var init_data_routes = __esm({
     init_helpers();
     router2 = (0, import_express2.Router)();
     router2.use(requireAuth);
-    router2.get("/users", requireRole("superadmin", "admin"), asyncHandler(async (_req, res) => {
-      res.json(await listUsers());
+    router2.get("/users", requireRole("superadmin", "admin"), asyncHandler(async (req, res) => {
+      res.json(await listUsers(req.user.role));
     }));
     router2.post("/users", requireRole("superadmin", "admin"), async (req, res, next) => {
       try {
