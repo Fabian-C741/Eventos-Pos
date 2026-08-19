@@ -24,7 +24,16 @@ export function PosScreen() {
   const [selectedCat, setSelectedCat] = useState<number | 'tickets' | 'all'>('all');
   const [items, setItems] = useState<CartItem[]>([]);
   const [tickets, setTickets] = useState<CartTicket[]>([]);
-  const [boxId, setBoxId] = useState<number | null>(null);
+  const [boxId, setBoxIdState] = useState<number | null>(() => {
+    const raw = localStorage.getItem('epos_box');
+    const n = raw ? Number(raw) : NaN;
+    return isNaN(n) ? null : n;
+  });
+  const setBoxId = (id: number | null) => {
+    if (id === null) localStorage.removeItem('epos_box');
+    else localStorage.setItem('epos_box', String(id));
+    setBoxIdState(id);
+  };
   const [pendingSale, setPendingSale] = useState<PendingSale | null>(null);
   const [showTicketModal, setShowTicketModal] = useState(false);
   const [ticketType, setTicketType] = useState<TicketType | null>(null);

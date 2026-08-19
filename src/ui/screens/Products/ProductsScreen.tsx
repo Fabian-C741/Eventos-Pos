@@ -217,38 +217,41 @@ export function ProductsScreen() {
       </Modal>
 
       {/* Categorías modal */}
-      <Modal open={catCreating || !!catEditing} onClose={() => { setCatCreating(false); setCatEditing(null); }} title={catEditing ? 'Editar categoría' : 'Nueva categoría'} size="lg">
-        <div className="row" style={{ alignItems: 'flex-start', gap: 18 }}>
-          <div style={{ flex: 1 }}>
-            <Field label="Nombre *">
-              <input className="input" value={catForm.name} onChange={(e) => setCatForm({ ...catForm, name: e.target.value })} placeholder="Ej: Comidas" />
-            </Field>
-            <Field label="Icono">
-              <IconPicker value={catForm.icon} onChange={(v) => setCatForm({ ...catForm, icon: v })} options={CATEGORY_ICONS} />
-            </Field>
-            <Field label="Color">
-              <ColorPicker value={catForm.color} onChange={(v) => setCatForm({ ...catForm, color: v })} colors={CATEGORY_COLORS} />
-            </Field>
-          </div>
-          <div style={{ flex: 1.4 }}>
-            <div style={{ fontWeight: 800, marginBottom: 10 }}>Categorías actuales</div>
-            {categories.map((c) => (
+      <Modal open={catCreating || !!catEditing} onClose={() => { setCatCreating(false); setCatEditing(null); setCatForm({ name: '', icon: '📦', color: '#0ea5e9' }); }} title={catEditing ? 'Editar categoría' : 'Nueva categoría'} size="lg">
+        <div className="grid grid-2" style={{ gap: 14 }}>
+          <Field label="Nombre *">
+            <input className="input" value={catForm.name} onChange={(e) => setCatForm({ ...catForm, name: e.target.value })} placeholder="Ej: Comidas" />
+          </Field>
+          <Field label="Icono">
+            <IconPicker value={catForm.icon} onChange={(v) => setCatForm({ ...catForm, icon: v })} options={CATEGORY_ICONS} />
+          </Field>
+        </div>
+        <Field label="Color">
+          <ColorPicker value={catForm.color} onChange={(v) => setCatForm({ ...catForm, color: v })} colors={CATEGORY_COLORS} />
+        </Field>
+        <div className="row mt-16" style={{ justifyContent: 'flex-end' }}>
+          <button className="btn btn-ghost" onClick={() => { setCatCreating(false); setCatEditing(null); setCatForm({ name: '', icon: '📦', color: '#0ea5e9' }); }}>Cerrar</button>
+          <button className="btn btn-primary" onClick={saveCat}>{catEditing ? 'Guardar cambios' : '＋ Crear categoría'}</button>
+        </div>
+        <div style={{ marginTop: 20, borderTop: '1px dashed var(--border)', paddingTop: 14 }}>
+          <div style={{ fontWeight: 800, marginBottom: 8 }}>Categorías actuales ({categories.length})</div>
+          {categories.length === 0 ? (
+            <div className="muted" style={{ fontSize: 13.5 }}>Todavía no hay categorías.</div>
+          ) : (
+            categories.map((c) => (
               <div className="row-between" key={c.id} style={{ padding: '8px 0', borderBottom: '1px dashed var(--border)' }}>
                 <div className="row">
                   <span style={{ fontSize: 20 }}>{c.icon}</span>
                   <span style={{ fontWeight: 700 }}>{c.name}</span>
+                  <span className="muted" style={{ fontSize: 12 }}>({products.filter((p) => p.category_id === c.id).length} productos)</span>
                 </div>
                 <div className="row">
                   <button className="btn btn-ghost btn-sm" onClick={() => { setCatEditing(c); setCatForm({ name: c.name, icon: c.icon, color: c.color }); }}>✏️</button>
                   <button className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)' }} onClick={() => setCatDeleting(c)}>🗑</button>
                 </div>
               </div>
-            ))}
-            <div className="row mt-16" style={{ justifyContent: 'flex-end' }}>
-              <button className="btn btn-ghost" onClick={() => { setCatCreating(false); setCatEditing(null); }}>Cerrar</button>
-              <button className="btn btn-primary" onClick={saveCat}>{catEditing ? 'Guardar' : 'Crear categoría'}</button>
-            </div>
-          </div>
+            ))
+          )}
         </div>
       </Modal>
 

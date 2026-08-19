@@ -15,7 +15,10 @@ interface AuthState {
 const AuthContext = createContext<AuthState | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<SessionUser | null>(null);
+  const [user, setUser] = useState<SessionUser | null>(() => {
+    const cached = getUserCache() as SessionUser | null;
+    return cached && getToken() ? cached : null;
+  });
   const [loading, setLoading] = useState(true);
   const [needsSetup, setNeedsSetup] = useState(false);
 
@@ -37,13 +40,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch {
         setNeedsSetup(true);
       }
-      loadUser();
+      setLoading(false);
     };
     bootstrap();
     const onLogout = () => setUser(null);
     window.addEventListener('epos:logout', onLogout);
     return () => window.removeEventListener('epos:logout', onLogout);
-  }, [loadUser]);
+  }, []);
 
   const applyAuth = (token: string, u: SessionUser) => {
     setToken(token);
