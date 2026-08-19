@@ -21,7 +21,7 @@ export function PosScreen() {
   const { push } = useToast();
   const navigate = useNavigate();
 
-  const [selectedCat, setSelectedCat] = useState<number | 'tickets'>('tickets');
+  const [selectedCat, setSelectedCat] = useState<number | 'tickets' | 'all'>('all');
   const [items, setItems] = useState<CartItem[]>([]);
   const [tickets, setTickets] = useState<CartTicket[]>([]);
   const [boxId, setBoxId] = useState<number | null>(null);
@@ -38,7 +38,7 @@ export function PosScreen() {
   const activeBoxes = useMemo(() => boxes.filter((b) => b.active === 1), [boxes]);
   const activeCategories = useMemo(() => categories.filter((c) => c.active === 1), [categories]);
   const activeProducts = useMemo(
-    () => products.filter((p) => p.active === 1 && (selectedCat === 'tickets' || p.category_id === selectedCat)),
+    () => products.filter((p) => p.active === 1 && (selectedCat === 'all' || p.category_id === selectedCat)),
     [products, selectedCat],
   );
   const activeTickets = useMemo(() => ticketTypes.filter((t) => t.active === 1), [ticketTypes]);
@@ -258,6 +258,12 @@ export function PosScreen() {
                   🎟️ Entradas
                 </button>
               )}
+              <button
+                className={`pos-category-tab ${selectedCat === 'all' ? 'active' : ''}`}
+                onClick={() => setSelectedCat('all')}
+              >
+                📦 Todos
+              </button>
               {activeCategories.map((c) => (
                 <button
                   key={c.id}
@@ -285,6 +291,12 @@ export function PosScreen() {
                   )}
                 </button>
               ))}
+              {activeTickets.length === 0 && (
+                <div className="empty" style={{ gridColumn: '1/-1' }}>
+                  <div className="empty-icon">🎟️</div>
+                  <div className="empty-title">Sin entradas disponibles</div>
+                </div>
+              )}
             </div>
           ) : (
             <div className="pos-grid">
@@ -299,7 +311,7 @@ export function PosScreen() {
               {activeProducts.length === 0 && (
                 <div className="empty" style={{ gridColumn: '1/-1' }}>
                   <div className="empty-icon">🧺</div>
-                  <div className="empty-title">Sin productos en esta categoría</div>
+                  <div className="empty-title">{selectedCat === 'all' ? 'Sin productos' : 'Sin productos en esta categoría'}</div>
                 </div>
               )}
             </div>
