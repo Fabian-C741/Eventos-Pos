@@ -10,7 +10,9 @@ import type { User } from '../../../shared/types';
 function LoginHeader() {
   return (
     <div className="login-logo">
-      <div className="logo-big">🎪</div>
+      <div className="brand-mark">
+        <span className="brand-mark-text">POS</span>
+      </div>
       <h1>Eventos POS</h1>
       <p>Ventas, entradas y recaudación para tu evento</p>
       <p className="muted" style={{ fontSize: 12 }}>v{APP_VERSION}</p>
@@ -20,9 +22,9 @@ function LoginHeader() {
 
 function RoleTitle({ icon, title }: { icon: string; title: string }) {
   return (
-    <div style={{ textAlign: 'center', marginBottom: 14 }}>
-      <div style={{ fontSize: 26 }}>{icon}</div>
-      <div style={{ fontWeight: 800, fontSize: 15 }}>{title}</div>
+    <div className="role-title">
+      <span style={{ marginRight: 6 }}>{icon}</span>
+      {title}
     </div>
   );
 }
@@ -252,7 +254,7 @@ export function CajeroLogin() {
                   className={`user-option ${selected?.id === c.id ? 'active' : ''}`}
                   onClick={() => { setSelected(c); setPin(''); setError(''); }}
                 >
-                  <div style={{ fontSize: 26 }}>🧑‍💼</div>
+                  <div className="user-avatar">{c.name.charAt(0)}</div>
                   <div>{c.name}</div>
                 </button>
               ))}

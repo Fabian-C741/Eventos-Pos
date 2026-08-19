@@ -332,7 +332,7 @@ test('reporte por vendedor incluye quien vendió', async () => {
   assert.ok(Number(row.total) > 0);
 });
 
-test('cajero puede cerrar su propia caja', async () => {
+test('cajero no puede cerrar cajas', async () => {
   const login = await api('POST', '/auth/login/pin', { username: 'cajero1', pin: '1234' }, false);
   const cashierToken = login.json.token;
   const ensure = await fetch(base + `/closes/box/${boxId}/ensure`, {
@@ -347,8 +347,7 @@ test('cajero puede cerrar su propia caja', async () => {
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cashierToken}` },
     body: JSON.stringify({ declared_by_payment: { efectivo: 0, transferencia: 0, tarjeta: 0, otro: 0 } }),
   });
-  assert.equal(res.status, 200);
-  assert.equal((await res.json()).status, 'cerrado');
+  assert.equal(res.status, 403);
 });
 
 test('eliminar evento borra ventas, productos y categorías', async () => {

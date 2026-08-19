@@ -1853,9 +1853,6 @@ async function openClose(eventId, boxId, userId) {
 async function currentOpenClose(boxId) {
   return getRow3("SELECT * FROM closes WHERE box_id = ? AND status = ?", boxId, "abierto");
 }
-async function getClose(closeId) {
-  return getRow3("SELECT * FROM closes WHERE id = ?", closeId);
-}
 async function computeCloseSummary(closeId) {
   const close = await getRow3("SELECT * FROM closes WHERE id = ?", closeId);
   if (!close) throw BadRequest("Cierre no encontrado");
@@ -2003,31 +2000,20 @@ var init_closes_routes = __esm({
         next(e);
       }
     });
-    router4.post("/:id/close", async (req, res, next) => {
+    router4.post("/:id/close", requireRole("superadmin", "admin"), async (req, res, next) => {
       try {
-        const id = parseNumber(req.params.id);
-        const close = await getClose(id);
-        if (!close) {
-          res.status(404).json({ error: "Cierre no encontrado" });
-          return;
-        }
-        const isAdmin = req.user.role === "superadmin" || req.user.role === "admin";
-        if (!isAdmin && close.user_id !== req.user.id) {
-          res.status(403).json({ error: "Solo pod\xE9s cerrar tu propia caja" });
-          return;
-        }
         const declared = req.body.declared_by_payment;
         if (!declared || typeof declared !== "object") {
           res.status(400).json({ error: "Datos de cierre inv\xE1lidos" });
           return;
         }
-        const closed = await closeBox(id, req.user.id, {
+        const close = await closeBox(parseNumber(req.params.id), req.user.id, {
           efectivo: Number(declared.efectivo ?? 0),
           transferencia: Number(declared.transferencia ?? 0),
           tarjeta: Number(declared.tarjeta ?? 0),
           otro: Number(declared.otro ?? 0)
         });
-        res.json(closed);
+        res.json(close);
       } catch (e) {
         next(e);
       }

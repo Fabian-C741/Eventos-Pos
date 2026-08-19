@@ -6,7 +6,7 @@ import { useToast } from '../../context/ToastContext';
 import { api, flushQueue, hasPendingQueue, queueSale } from '../../api/client';
 import { formatMoney, padNumber } from '../../../shared/format';
 import { PAYMENT_METHODS, PAYMENT_LABELS } from '../../../shared/constants';
-import type { CartItem, CartTicket, Event, Box, TicketType, Sale, Close, CloseSummary } from '../../../shared/types';
+import type { CartItem, CartTicket, Event, Box, TicketType, Sale, Close } from '../../../shared/types';
 
 interface PendingSale {
   op: number | null;
@@ -38,11 +38,11 @@ export function PosScreen() {
   const [showTicketModal, setShowTicketModal] = useState(false);
   const [ticketType, setTicketType] = useState<TicketType | null>(null);
   const [ticketQty, setTicketQty] = useState(1);
-  const [recent, setRecent] = useState<Sale[]>([]);
   const [pendingQueue, setPendingQueue] = useState(hasPendingQueue());
   const [clock, setClock] = useState(new Date());
-  const [closeModal, setCloseModal] = useState<{ close: Close; summary: CloseSummary } | null>(null);
-  const [declared, setDeclared] = useState<Record<string, string>>({ efectivo: '', transferencia: '', tarjeta: '', otro: '' });
+  const [myReportOpen, setMyReportOpen] = useState(false);
+  const [mySales, setMySales] = useState<Sale[]>([]);
+  const [myTotals, setMyTotals] = useState({ ventas: 0, efectivo: 0, transferencia: 0, tarjeta: 0, otro: 0, total: 0 });
 
   const saleSound = useRef<AudioContext | null>(null);
 
@@ -93,12 +93,6 @@ export function PosScreen() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  useEffect(() => {
-    if (boxId) {
-      api.get<Sale[]>(`/sales/box/${boxId}/recent`).then(setRecent).catch(() => {});
-    }
-  }, [boxId, items.length, tickets.length]);
 
   useEffect(() => {
     if (pendingSale) {
@@ -189,13 +183,6 @@ export function PosScreen() {
     setPendingSale({ op, total: cartTotal, method: PAYMENT_LABELS[method] || method, offline });
     setItems([]);
     setTickets([]);
-    if (!offline) {
-      try {
-        api.get<Sale[]>(`/sales/box/${boxId}/recent`).then(setRecent).catch(() => {});
-      } catch {
-        /* noop */
-      }
-    }
   };
 
   const registerTicketSale = async (method: string) => {
@@ -226,11 +213,6 @@ export function PosScreen() {
     setShowTicketModal(false);
     playSound();
     setPendingSale({ op, total: ticketType.price * ticketQty, method: PAYMENT_LABELS[method] || method, offline });
-    try {
-      api.get<Sale[]>(`/sales/box/${boxId}/recent`).then(setRecent).catch(() => {});
-    } catch {
-      /* noop */
-    }
   };
 
   const syncNow = async () => {
@@ -239,50 +221,33 @@ export function PosScreen() {
     if (n > 0) push('success', `${n} venta(s) pendiente(s) subidas`);
   };
 
-  const openCloseFlow = async () => {
-    if (!boxId) return;
+  const openMyReport = async () => {
+    if (!activeEvent || !user) return;
     try {
-      const r = await api.get<{ close: Close; summary: CloseSummary }>(`/closes/box/${boxId}/current`);
-      if (!r?.close) {
-        push('warn', 'No hay una caja abierta');
-        return;
-      }
-      setDeclared({
-        efectivo: String(r.summary.by_payment.efectivo ?? ''),
-        transferencia: String(r.summary.by_payment.transferencia ?? ''),
-        tarjeta: String(r.summary.by_payment.tarjeta ?? ''),
-        otro: String(r.summary.by_payment.otro ?? ''),
-      });
-      setCloseModal({ close: r.close, summary: r.summary });
+      const [sales, rep] = await Promise.all([
+        api.get<Sale[]>(`/sales?event_id=${activeEvent.id}&user_id=${user.id}&limit=100`),
+        api.get<{ rows: { ventas: number; efectivo: number; transferencia: number; tarjeta: number; otro: number; total: number }[] }>(
+          `/reports/diario?event_id=${activeEvent.id}&user_id=${user.id}`,
+        ),
+      ]);
+      const t = rep.rows.reduce(
+        (acc, r) => ({
+          ventas: acc.ventas + Number(r.ventas || 0),
+          efectivo: acc.efectivo + Number(r.efectivo || 0),
+          transferencia: acc.transferencia + Number(r.transferencia || 0),
+          tarjeta: acc.tarjeta + Number(r.tarjeta || 0),
+          otro: acc.otro + Number(r.otro || 0),
+          total: acc.total + Number(r.total || 0),
+        }),
+        { ventas: 0, efectivo: 0, transferencia: 0, tarjeta: 0, otro: 0, total: 0 },
+      );
+      setMyTotals(t);
+      setMySales(sales);
+      setMyReportOpen(true);
     } catch (e) {
       push('error', (e as Error).message);
     }
   };
-
-  const doClose = async () => {
-    if (!closeModal) return;
-    try {
-      await api.post(`/closes/${closeModal.close.id}/close`, {
-        declared_by_payment: {
-          efectivo: Number(declared.efectivo || 0),
-          transferencia: Number(declared.transferencia || 0),
-          tarjeta: Number(declared.tarjeta || 0),
-          otro: Number(declared.otro || 0),
-        },
-      });
-      push('success', 'Cierre de caja registrado. Cambiá de turno para seguir vendiendo.');
-      setCloseModal(null);
-      setItems([]);
-      setTickets([]);
-      setBoxId(null);
-    } catch (e) {
-      push('error', (e as Error).message);
-    }
-  };
-
-  const closeDiff = closeModal
-    ? Number(declared.efectivo || 0) + Number(declared.transferencia || 0) + Number(declared.tarjeta || 0) + Number(declared.otro || 0) - closeModal.summary.total
-    : 0;
 
   // ---- selección de evento / caja ----
   const showEventPicker = !activeEvent && events.length > 0;
@@ -309,8 +274,8 @@ export function PosScreen() {
         </span>
         <span className="clock">{clock.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</span>
         {boxId && (
-          <button className="btn btn-sm" style={{ background: 'var(--danger)', color: '#fff', borderColor: 'var(--danger)' }} onClick={openCloseFlow}>
-            🔒 Cerrar caja
+          <button className="btn btn-sm" style={{ background: 'var(--primary-soft)', color: 'var(--primary)', borderColor: 'transparent' }} onClick={openMyReport}>
+            🧾 Mi reporte
           </button>
         )}
         {user?.role !== 'cajero' && (
@@ -487,20 +452,6 @@ export function PosScreen() {
               🧹 Vaciar carrito
             </button>
           </div>
-
-          {recent.length > 0 && (
-            <div className="pos-recent">
-              <h4>Últimas ventas de esta caja</h4>
-              {recent.map((r) => (
-                <div className="recent-row" key={r.id}>
-                  <span>
-                    #{r.operation_number} · {r.created_at.slice(11, 16)} · {PAYMENT_LABELS[r.payment_method]}
-                  </span>
-                  <b>{formatMoney(r.total)}</b>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
       </div>
 
@@ -554,53 +505,71 @@ export function PosScreen() {
         </div>
       )}
 
-      {/* Cerrar caja */}
-      {closeModal && (
-        <div className="modal-backdrop">
-          <div className="modal" style={{ maxWidth: 480 }}>
+      {/* Mi reporte */}
+      {myReportOpen && (
+        <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && setMyReportOpen(false)}>
+          <div className="modal" style={{ maxWidth: 560 }}>
             <div className="modal-head">
-              <h2 style={{ fontSize: 18 }}>🔒 Cerrar caja · {boxes.find((b) => b.id === closeModal.close.box_id)?.name || 'Caja'}</h2>
+              <h2 style={{ fontSize: 18 }}>🧾 Mi reporte</h2>
+              <button className="icon-btn" style={{ width: 36, height: 36 }} onClick={() => setMyReportOpen(false)}>✕</button>
             </div>
             <div className="modal-body">
               <div className="row-between mb-16">
-                <div>
-                  <div className="muted" style={{ fontSize: 12.5, fontWeight: 700 }}>VENTAS REALIZADAS</div>
-                  <div style={{ fontSize: 22, fontWeight: 800 }}>{closeModal.summary.sales_count}</div>
+                <div className="card card-pad" style={{ flex: 1 }}>
+                  <div className="muted" style={{ fontSize: 12.5, fontWeight: 700, textTransform: 'uppercase' }}>Ventas</div>
+                  <div style={{ fontSize: 24, fontWeight: 800 }}>{myTotals.ventas}</div>
                 </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div className="muted" style={{ fontSize: 12.5, fontWeight: 700 }}>TOTAL ESPERADO</div>
-                  <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--primary)' }}>{formatMoney(closeModal.summary.total)}</div>
+                <div className="card card-pad" style={{ flex: 1, borderTop: '4px solid var(--primary)' }}>
+                  <div className="muted" style={{ fontSize: 12.5, fontWeight: 700, textTransform: 'uppercase' }}>Total vendido</div>
+                  <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--primary)' }}>{formatMoney(myTotals.total)}</div>
+                </div>
+              </div>
+              <div className="grid grid-2" style={{ marginBottom: 16 }}>
+                <div className="row-between card" style={{ padding: '10px 14px' }}>
+                  <span className="muted" style={{ fontWeight: 700 }}>Efectivo</span>
+                  <b>{formatMoney(myTotals.efectivo)}</b>
+                </div>
+                <div className="row-between card" style={{ padding: '10px 14px' }}>
+                  <span className="muted" style={{ fontWeight: 700 }}>Transferencia</span>
+                  <b>{formatMoney(myTotals.transferencia)}</b>
+                </div>
+                <div className="row-between card" style={{ padding: '10px 14px' }}>
+                  <span className="muted" style={{ fontWeight: 700 }}>Tarjeta</span>
+                  <b>{formatMoney(myTotals.tarjeta)}</b>
+                </div>
+                <div className="row-between card" style={{ padding: '10px 14px' }}>
+                  <span className="muted" style={{ fontWeight: 700 }}>Otro</span>
+                  <b>{formatMoney(myTotals.otro)}</b>
                 </div>
               </div>
 
-              <div style={{ fontWeight: 800, marginBottom: 10 }}>Declará lo que hay en la caja (dinero real)</div>
-              <div className="grid grid-2">
-                {PAYMENT_METHODS.map((m) => (
-                  <div key={m.key} className="field">
-                    <label style={{ fontSize: 12.5, fontWeight: 700 }}>
-                      {m.icon} {PAYMENT_LABELS[m.key]} (esperado: {formatMoney(closeModal.summary.by_payment[m.key as keyof typeof closeModal.summary.by_payment] || 0)})
-                    </label>
-                    <input
-                      className="input"
-                      inputMode="numeric"
-                      value={declared[m.key] ?? ''}
-                      onChange={(e) => setDeclared({ ...declared, [m.key]: e.target.value.replace(/[^\d]/g, '') })}
-                      style={{ fontSize: 18, fontWeight: 800 }}
-                    />
-                  </div>
-                ))}
-              </div>
-
-              <div className="row-between mt-16" style={{ padding: '12px 14px', background: 'var(--surface-2)', borderRadius: 12 }}>
-                <span style={{ fontWeight: 800 }}>Diferencia</span>
-                <span className={`badge ${closeDiff === 0 ? 'badge-green' : closeDiff > 0 ? 'badge-blue' : 'badge-red'}`} style={{ fontSize: 15 }}>
-                  {closeDiff === 0 ? '✓ Cuadra' : closeDiff > 0 ? `+${formatMoney(closeDiff)}` : formatMoney(closeDiff)}
-                </span>
-              </div>
-
-              <div className="row mt-16" style={{ justifyContent: 'flex-end' }}>
-                <button className="btn btn-ghost" onClick={() => setCloseModal(null)}>Cancelar</button>
-                <button className="btn btn-primary" onClick={doClose}>Confirmar cierre</button>
+              <div style={{ fontWeight: 800, marginBottom: 8 }}>Mis ventas</div>
+              <div className="table-wrap">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>N°</th>
+                      <th>Hora</th>
+                      <th>Pago</th>
+                      <th className="text-right">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {mySales.map((s) => (
+                      <tr key={s.id}>
+                        <td>#{s.operation_number}</td>
+                        <td style={{ fontSize: 12.5 }}>{s.created_at.slice(11, 16)}</td>
+                        <td>{PAYMENT_LABELS[s.payment_method]}</td>
+                        <td className="text-right" style={{ fontWeight: 700 }}>{formatMoney(s.total)}</td>
+                      </tr>
+                    ))}
+                    {mySales.length === 0 && (
+                      <tr>
+                        <td colSpan={4} className="muted" style={{ textAlign: 'center' }}>Todavía no registraste ventas</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>
