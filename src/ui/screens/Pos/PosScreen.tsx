@@ -258,34 +258,17 @@ export function PosScreen() {
     setShowCartLines(false);
   };
 
-  const registerTicketSale = async (method: string) => {
-    if (!ticketType || !boxId) return;
-    const payload = {
-      event_id: activeEvent!.id,
-      box_id: boxId,
-      payment_method: method,
-      items: [],
-      tickets: [{ ticket_type_id: ticketType.id, quantity: ticketQty }],
-    };
-    let op: number | null = null;
-    let offline = false;
-    try {
-      const res = await api.post<{ sale: { operation_number: number } }>('/sales', payload);
-      op = res.sale.operation_number;
-    } catch (e) {
-      const err = e as { code?: string; status: number };
-      if (err.status === 0 || err.code === 'NETWORK') {
-        queueSale(payload);
-        setPendingQueue(true);
-        offline = true;
-      } else {
-        push('error', (e as Error).message);
-        return;
-      }
-    }
+  const addTicketToCart = () => {
+    if (!ticketType) return;
+    setTickets((prev) => {
+      const found = prev.find((t) => t.ticket_type_id === ticketType.id);
+      if (found) return prev.map((t) => (t.ticket_type_id === ticketType.id ? { ...t, quantity: t.quantity + ticketQty } : t));
+      return [
+        ...prev,
+        { ticket_type_id: ticketType.id, name: ticketType.name, unit_price: ticketType.price, quantity: ticketQty, icon: ticketType.icon, color: ticketType.color },
+      ];
+    });
     setShowTicketModal(false);
-    playSound();
-    setPendingSale({ op, total: ticketType.price * ticketQty, method: PAYMENT_LABELS[method] || method, offline });
   };
 
   const syncNow = async () => {
@@ -577,12 +560,11 @@ export function PosScreen() {
               <div style={{ textAlign: 'center', fontWeight: 800, fontSize: 26, margin: '4px 0 14px' }}>
                 {formatMoney(ticketType.price * ticketQty)}
               </div>
-              <div className="ticket-pay">
-                {visiblePayments.map((m) => (
-                  <button key={m.key} className="pos-pay-btn" style={{ background: m.color }} onClick={() => registerTicketSale(m.key)}>
-                    {m.icon} {m.label}
-                  </button>
-                ))}
+              <button className="pos-pay-btn" style={{ background: 'var(--primary)', width: '100%' }} onClick={addTicketToCart}>
+                🛒 Agregar al carrito
+              </button>
+              <div className="muted" style={{ textAlign: 'center', fontSize: 12, marginTop: 8 }}>
+                Después tocá Efectivo o Transferencia abajo para cobrar
               </div>
             </div>
           </div>
