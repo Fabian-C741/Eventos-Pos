@@ -65,16 +65,15 @@ export function PosScreen() {
   );
   const activeProducts = useMemo(
     () =>
-      products.filter(
-        (p) =>
-          p.active === 1 &&
-          p.category_id != null &&
-          (selectedCat === 'all'
-            ? pos.unlimited || pos.cats!.includes(p.category_id)
-            : selectedCat === 'tickets'
-              ? false
-              : p.category_id === selectedCat && (pos.unlimited || pos.cats!.includes(selectedCat))),
-      ),
+      products.filter((p) => {
+        if (p.active !== 1) return false;
+        if (selectedCat === 'tickets') return false;
+        if (selectedCat === 'all') {
+          if (pos.unlimited) return true;
+          return p.category_id != null && pos.cats!.includes(p.category_id);
+        }
+        return p.category_id === selectedCat && (pos.unlimited || pos.cats!.includes(selectedCat));
+      }),
     [products, selectedCat, pos],
   );
   const activeTickets = useMemo(() => (pos.tickets ? ticketTypes.filter((t) => t.active === 1) : []), [ticketTypes, pos.tickets]);
