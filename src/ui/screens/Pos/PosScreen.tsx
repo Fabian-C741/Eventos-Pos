@@ -60,10 +60,18 @@ export function PosScreen() {
   const saleSound = useRef<AudioContext | null>(null);
 
   const activeBoxes = useMemo(() => boxes.filter((b) => b.active === 1), [boxes]);
+  const assignedBox = useMemo(
+    () => (user?.pos_box_id ? boxes.find((b) => b.id === user.pos_box_id) : undefined),
+    [user?.pos_box_id, boxes],
+  );
   const pos = useMemo(() => {
+    if (assignedBox) {
+      const cats = assignedBox.pos_categories == null ? null : assignedBox.pos_categories.split(',').map(Number).filter(Boolean);
+      return { unlimited: cats === null, cats, tickets: assignedBox.pos_tickets !== 0 };
+    }
     const cats = user?.pos_categories == null ? null : user.pos_categories.split(',').map(Number).filter(Boolean);
     return { unlimited: cats === null, cats, tickets: user?.pos_tickets !== 0 };
-  }, [user?.pos_categories, user?.pos_tickets]);
+  }, [assignedBox, user?.pos_categories, user?.pos_tickets]);
   const canSellProducts = useMemo(() => pos.unlimited || (pos.cats?.length ?? 0) > 0, [pos]);
   const ticketsOnly = pos.tickets && !canSellProducts;
   const activeCategories = useMemo(
@@ -141,6 +149,22 @@ export function PosScreen() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    const assigned = user?.role === 'cajero' ? user.pos_box_id : null;
+    if (!assigned) return;
+    api
+      .get<Box>(`/boxes/${assigned}`)
+      .then((box) => {
+        if (!box) return;
+        setBoxId(box.id);
+        localStorage.setItem('epos_box', String(box.id));
+        api.post(`/closes/box/${box.id}/ensure`, { event_id: box.event_id }).catch(() => {});
+        setActiveEvent(box.event_id);
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.role, user?.pos_box_id]);
 
   useEffect(() => {
     if (pendingSale) {

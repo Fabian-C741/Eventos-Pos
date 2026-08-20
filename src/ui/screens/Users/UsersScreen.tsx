@@ -11,7 +11,7 @@ import type { User, Role } from '../../../shared/types';
 
 export function UsersScreen() {
   const { user: me } = useAuth();
-  const { categories, activeEvent } = useData();
+  const { activeEvent, boxes } = useData();
   const { push } = useToast();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -19,9 +19,7 @@ export function UsersScreen() {
   const [editing, setEditing] = useState<User | null>(null);
   const [deleting, setDeleting] = useState<User | null>(null);
   const [form, setForm] = useState({ username: '', name: '', role: 'cajero' as Role, password: '', pin: '', active: 1 });
-  const [posCats, setPosCats] = useState<number[]>([]);
-  const [posTickets, setPosTickets] = useState(true);
-  const [posUnlimited, setPosUnlimited] = useState(true);
+  const [posBoxId, setPosBoxId] = useState<number | ''>('');
   const [ownerId, setOwnerId] = useState<number | ''>('');
 
   const load = async () => {
@@ -41,18 +39,14 @@ export function UsersScreen() {
 
   const openCreate = () => {
     setForm({ username: '', name: '', role: me?.role === 'superadmin' ? 'admin' : 'cajero', password: '', pin: '', active: 1 });
-    setPosCats([]);
-    setPosTickets(true);
-    setPosUnlimited(true);
+    setPosBoxId('');
     setOwnerId('');
     setCreating(true);
   };
 
   const openEdit = (u: User) => {
     setForm({ username: u.username, name: u.name, role: u.role, password: '', pin: '', active: u.active });
-    setPosCats((u.pos_categories || '').split(',').map(Number).filter(Boolean));
-    setPosTickets(u.pos_tickets !== 0);
-    setPosUnlimited(u.pos_categories == null);
+    setPosBoxId(u.pos_box_id ?? '');
     setOwnerId(u.owner_id ?? '');
     setEditing(u);
   };
@@ -67,8 +61,7 @@ export function UsersScreen() {
         if (form.role === 'cajero' && form.pin) payload.pin = form.pin;
         if (form.role !== 'cajero' && form.password) payload.password = form.password;
         if (form.role === 'cajero') {
-          payload.pos_categories = posUnlimited ? null : posCats.join(',');
-          payload.pos_tickets = posUnlimited ? 1 : posTickets ? 1 : 0;
+          payload.pos_box_id = posBoxId === '' ? null : Number(posBoxId);
           payload.owner_id = me?.role === 'admin' ? me.id : ownerId === '' ? null : Number(ownerId);
         }
         await api.put(`/users/${editing.id}`, payload);
@@ -81,8 +74,7 @@ export function UsersScreen() {
           ...(form.role === 'cajero' ? { pin: form.pin } : { password: form.password }),
         };
         if (form.role === 'cajero') {
-          body.pos_categories = posUnlimited ? null : posCats.join(',');
-          body.pos_tickets = posUnlimited ? 1 : posTickets ? 1 : 0;
+          body.pos_box_id = posBoxId === '' ? null : Number(posBoxId);
           body.owner_id = me?.role === 'admin' ? me.id : ownerId === '' ? null : Number(ownerId);
         }
         await api.post('/users', body);
@@ -97,6 +89,7 @@ export function UsersScreen() {
   };
 
   const roleLabel = (r: Role) => (r === 'superadmin' ? 'Superadmin' : r === 'admin' ? 'Admin' : 'Cajero');
+  const boxName = (u: User) => (u.pos_box_id ? boxes.find((b) => b.id === u.pos_box_id)?.name ?? '—' : '—');
 
   return (
     <div>
@@ -116,6 +109,7 @@ export function UsersScreen() {
                 <th>Nombre</th>
                 <th>Usuario</th>
                 <th>Rol</th>
+                <th>Caja</th>
                 <th>Estado</th>
                 <th>Último ingreso</th>
                 <th></th>
@@ -131,6 +125,7 @@ export function UsersScreen() {
                       {roleLabel(u.role)}
                     </span>
                   </td>
+                  <td>{u.role === 'cajero' ? boxName(u) : <span className="muted">—</span>}</td>
                   <td>{u.active ? <span className="badge badge-green">Activo</span> : <span className="badge badge-red">Inactivo</span>}</td>
                   <td className="muted" style={{ fontSize: 12.5 }}>{u.last_login_at ? formatDateTime(u.last_login_at) : '—'}</td>
                   <td>
@@ -179,9 +174,9 @@ export function UsersScreen() {
 
         {form.role === 'cajero' && (
           <div className="card" style={{ marginBottom: 16 }}>
-            <div style={{ fontWeight: 800, marginBottom: 4 }}>Puesto del cajero</div>
+            <div style={{ fontWeight: 800, marginBottom: 4 }}>Caja asignada</div>
             <p className="muted" style={{ fontSize: 12.5, marginBottom: 10 }}>
-              Elegí qué vende este cajero. En el POS solo va a ver lo que asignes aquí.
+              Elegí en qué caja trabaja este cajero. Al entrar verá solo esa caja y lo que ella vende.
             </p>
             {me?.role === 'superadmin' && (
               <Field label="Pertenece al admin (inquilino)">
@@ -193,36 +188,21 @@ export function UsersScreen() {
                 </select>
               </Field>
             )}
-            <label className="row" style={{ marginBottom: 8 }}>
-              <input type="checkbox" checked={posUnlimited} onChange={(e) => setPosUnlimited(e.target.checked)} />
-              <span style={{ fontWeight: 700 }}>Ve todo el evento (sin restricciones)</span>
-            </label>
-            <div style={{ opacity: posUnlimited ? 0.45 : 1, pointerEvents: posUnlimited ? 'none' : 'auto' }}>
-              <label className="row" style={{ marginBottom: 8 }}>
-                <input type="checkbox" checked={posTickets} onChange={(e) => setPosTickets(e.target.checked)} />
-                <span style={{ fontWeight: 700 }}>🎟 Vende entradas</span>
-              </label>
-              {!activeEvent ? (
-                <p className="muted" style={{ fontSize: 12.5 }}>Sin evento activo: creá un evento y sus categorías para asignar el puesto.</p>
-              ) : categories.length === 0 ? (
-                <p className="muted" style={{ fontSize: 12.5 }}>El evento actual no tiene categorías todavía.</p>
-              ) : (
-                <div className="grid grid-2">
-                  {categories.filter((c) => c.active === 1).map((c) => (
-                    <label key={c.id} className="row">
-                      <input
-                        type="checkbox"
-                        checked={posCats.includes(c.id)}
-                        onChange={(e) =>
-                          setPosCats((prev) => (e.target.checked ? [...prev, c.id] : prev.filter((x) => x !== c.id)))
-                        }
-                      />
-                      <span style={{ fontSize: 13.5 }}>{c.name}</span>
-                    </label>
-                  ))}
-                </div>
-              )}
-            </div>
+            <Field label={activeEvent ? `Caja del evento "${activeEvent.name}"` : 'Caja'}>
+              <select className="input" value={posBoxId} onChange={(e) => setPosBoxId(e.target.value === '' ? '' : Number(e.target.value))}>
+                <option value="">Sin caja asignada</option>
+                {boxes.map((b) => (
+                  <option key={b.id} value={b.id}>{b.name}{b.active === 0 ? ' (inactiva)' : ''}</option>
+                ))}
+              </select>
+            </Field>
+            {boxes.length === 0 && (
+              <p className="muted" style={{ fontSize: 12.5 }}>
+                {activeEvent
+                  ? 'El evento actual no tiene cajas. Creá cajas en la sección "Cajas" y definí qué vende cada una.'
+                  : 'Seleccioná un evento en el menú superior para ver sus cajas.'}
+              </p>
+            )}
           </div>
         )}
 

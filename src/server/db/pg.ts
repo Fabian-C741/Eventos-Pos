@@ -117,7 +117,10 @@ export async function initDb(_config: DbConfig = {}) {
       'ALTER TABLE users ADD COLUMN IF NOT EXISTS pos_categories TEXT; ' +
         'ALTER TABLE users ADD COLUMN IF NOT EXISTS pos_tickets INTEGER NOT NULL DEFAULT 1; ' +
         'ALTER TABLE users ADD COLUMN IF NOT EXISTS owner_id INTEGER; ' +
-        'ALTER TABLE events ADD COLUMN IF NOT EXISTS owner_id INTEGER;',
+        'ALTER TABLE users ADD COLUMN IF NOT EXISTS pos_box_id INTEGER; ' +
+        'ALTER TABLE events ADD COLUMN IF NOT EXISTS owner_id INTEGER; ' +
+        'ALTER TABLE boxes ADD COLUMN IF NOT EXISTS pos_categories TEXT; ' +
+        'ALTER TABLE boxes ADD COLUMN IF NOT EXISTS pos_tickets INTEGER NOT NULL DEFAULT 1;',
     );
   } catch {
     /* noop: la tabla o columnas ya pueden existir */

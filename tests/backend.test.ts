@@ -481,6 +481,41 @@ test('cajero sin puesto asignado ve todo (pos_categories null)', async () => {
   assert.equal(cajero.pos_tickets, 1);
 });
 
+test('la caja define el puesto y el cajero se asigna a una caja', async () => {
+  const ev = await api('POST', '/events', { name: 'Evento Cajas', venue: 'Sala 2' });
+  assert.equal(ev.status, 200);
+  const evId = ev.json.id;
+  const cat = await api('POST', `/events/${evId}/categories`, { name: 'Bebidas', icon: '🥤', color: '#3b82f6' });
+  assert.equal(cat.status, 200);
+
+  const create = await api('POST', `/events/${evId}/boxes`, { name: 'Caja Puesto', pos_tickets: 0 });
+  assert.equal(create.status, 200);
+  const boxIdNew = create.json.id;
+
+  const put = await api('PUT', `/boxes/${boxIdNew}`, { pos_categories: String(cat.json.id), pos_tickets: 0 });
+  assert.equal(put.status, 200);
+  const got = await api('GET', `/boxes/${boxIdNew}`);
+  assert.equal(got.json.pos_categories, String(cat.json.id));
+  assert.equal(got.json.pos_tickets, 0);
+
+  const r = await api('POST', '/users', {
+    username: 'cajero_caja',
+    name: 'Cajero De Caja',
+    role: 'cajero',
+    pin: '3333',
+    pos_box_id: boxIdNew,
+  });
+  assert.equal(r.status, 200);
+
+  const list = await api('GET', '/users');
+  const cajero = list.json.find((u: { username: string }) => u.username === 'cajero_caja');
+  assert.equal(cajero.pos_box_id, boxIdNew);
+
+  const login = await api('POST', '/auth/login/pin', { username: 'cajero_caja', pin: '3333' }, false);
+  assert.equal(login.status, 200);
+  assert.equal(login.json.user.pos_box_id, boxIdNew);
+});
+
 test('login-config público devuelve nombre y logo personalizable', async () => {
   let r = await api('GET', '/auth/login-config', undefined, false);
   assert.equal(r.status, 200);

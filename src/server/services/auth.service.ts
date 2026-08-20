@@ -128,7 +128,7 @@ async function createSession(user: User, device: string): Promise<{ token: strin
 export async function validateSession(token: string): Promise<User | null> {
   if (!token) return null;
   const row = await getRow<User>(
-    `SELECT u.id, u.username, u.name, u.role, u.active, u.created_at, u.last_login_at, u.pos_categories, u.pos_tickets, u.owner_id
+    `SELECT u.id, u.username, u.name, u.role, u.active, u.created_at, u.last_login_at, u.pos_categories, u.pos_tickets, u.pos_box_id, u.owner_id
      FROM sessions s JOIN users u ON u.id = s.user_id
      WHERE s.token = ? AND s.expires_at > ?`,
     token,
@@ -155,7 +155,7 @@ export async function listUsers(actor: User): Promise<User[]> {
     params.push('cajero', actor.id);
   }
   return allRows<User>(
-    `SELECT id, username, name, role, active, pos_categories, pos_tickets, owner_id, created_at, last_login_at
+    `SELECT id, username, name, role, active, pos_categories, pos_tickets, pos_box_id, owner_id, created_at, last_login_at
      FROM users ${filter} ORDER BY CASE role WHEN 'superadmin' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, name`,
     ...params,
   );
@@ -169,6 +169,7 @@ export async function createUser(input: {
   pin?: string;
   pos_categories?: string;
   pos_tickets?: number;
+  pos_box_id?: number | null;
   owner_id?: number | null;
 }, actor: User): Promise<number> {
   const { username, name, role } = input;
@@ -203,19 +204,20 @@ export async function createUser(input: {
     pwd = hashPassword(input.password);
   }
   const res = await exec(
-    'INSERT INTO users (username, password_hash, role, name, pos_categories, pos_tickets, owner_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    'INSERT INTO users (username, password_hash, role, name, pos_categories, pos_tickets, pos_box_id, owner_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
     usernameNorm,
     pwd,
     role,
     name.trim() || usernameNorm,
     role === 'cajero' ? input.pos_categories ?? null : null,
     role === 'cajero' ? (input.pos_tickets ?? 1) : 1,
+    role === 'cajero' ? input.pos_box_id ?? null : null,
     ownerId,
   );
   return res.lastInsertRowid;
 }
 
-export async function updateUser(id: number, input: { name?: string; active?: number; password?: string; pin?: string; pos_categories?: string; pos_tickets?: number; owner_id?: number | null }, actor: User) {
+export async function updateUser(id: number, input: { name?: string; active?: number; password?: string; pin?: string; pos_categories?: string; pos_tickets?: number; pos_box_id?: number | null; owner_id?: number | null }, actor: User) {
   const target = await getRow<User>('SELECT * FROM users WHERE id = ?', id);
   if (!target) throw BadRequest('Usuario no encontrado');
   if (target.role === 'superadmin' && target.id !== actor.id) throw BadRequest('No podés modificar al superadministrador');
@@ -236,6 +238,7 @@ export async function updateUser(id: number, input: { name?: string; active?: nu
   }
   if (input.pos_categories !== undefined) await exec('UPDATE users SET pos_categories = ? WHERE id = ?', input.pos_categories, id);
   if (input.pos_tickets !== undefined) await exec('UPDATE users SET pos_tickets = ? WHERE id = ?', input.pos_tickets ? 1 : 0, id);
+  if (input.pos_box_id !== undefined) await exec('UPDATE users SET pos_box_id = ? WHERE id = ?', input.pos_box_id, id);
   if (input.owner_id !== undefined && actor.role === 'superadmin' && target.role === 'cajero') {
     const ownerId = input.owner_id ?? null;
     if (ownerId !== null) {

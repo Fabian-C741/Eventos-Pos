@@ -51,8 +51,12 @@ export async function initDb(config: DbConfig = {}) {
   if (!userCols.has('pos_categories')) db.exec('ALTER TABLE users ADD COLUMN pos_categories TEXT');
   if (!userCols.has('pos_tickets')) db.exec('ALTER TABLE users ADD COLUMN pos_tickets INTEGER NOT NULL DEFAULT 1');
   if (!userCols.has('owner_id')) db.exec('ALTER TABLE users ADD COLUMN owner_id INTEGER');
+  if (!userCols.has('pos_box_id')) db.exec('ALTER TABLE users ADD COLUMN pos_box_id INTEGER');
   const eventCols = new Set((db.prepare('PRAGMA table_info(events)').all() as { name: string }[]).map((c) => c.name));
   if (!eventCols.has('owner_id')) db.exec('ALTER TABLE events ADD COLUMN owner_id INTEGER');
+  const boxCols = new Set((db.prepare('PRAGMA table_info(boxes)').all() as { name: string }[]).map((c) => c.name));
+  if (!boxCols.has('pos_categories')) db.exec('ALTER TABLE boxes ADD COLUMN pos_categories TEXT');
+  if (!boxCols.has('pos_tickets')) db.exec('ALTER TABLE boxes ADD COLUMN pos_tickets INTEGER NOT NULL DEFAULT 1');
   logger.info('db', `Base de datos inicializada en ${dbPath}`);
   return db;
 }

@@ -14,6 +14,7 @@ export interface User {
   last_login_at: string | null;
   pos_categories?: string | null;
   pos_tickets?: number | null;
+  pos_box_id?: number | null;
   owner_id?: number | null;
 }
 
@@ -34,6 +35,8 @@ export interface Box {
   event_id: number;
   name: string;
   active: number;
+  pos_categories?: string | null;
+  pos_tickets?: number | null;
 }
 
 export interface Category {
@@ -192,6 +195,7 @@ export interface SessionUser {
   role: Role;
   pos_categories?: string | null;
   pos_tickets?: number | null;
+  pos_box_id?: number | null;
   owner_id?: number | null;
 }
 

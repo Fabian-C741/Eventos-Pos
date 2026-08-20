@@ -162,8 +162,12 @@ async function initDb(config = {}) {
   if (!userCols.has("pos_categories")) db.exec("ALTER TABLE users ADD COLUMN pos_categories TEXT");
   if (!userCols.has("pos_tickets")) db.exec("ALTER TABLE users ADD COLUMN pos_tickets INTEGER NOT NULL DEFAULT 1");
   if (!userCols.has("owner_id")) db.exec("ALTER TABLE users ADD COLUMN owner_id INTEGER");
+  if (!userCols.has("pos_box_id")) db.exec("ALTER TABLE users ADD COLUMN pos_box_id INTEGER");
   const eventCols = new Set(db.prepare("PRAGMA table_info(events)").all().map((c) => c.name));
   if (!eventCols.has("owner_id")) db.exec("ALTER TABLE events ADD COLUMN owner_id INTEGER");
+  const boxCols = new Set(db.prepare("PRAGMA table_info(boxes)").all().map((c) => c.name));
+  if (!boxCols.has("pos_categories")) db.exec("ALTER TABLE boxes ADD COLUMN pos_categories TEXT");
+  if (!boxCols.has("pos_tickets")) db.exec("ALTER TABLE boxes ADD COLUMN pos_tickets INTEGER NOT NULL DEFAULT 1");
   logger.info("db", `Base de datos inicializada en ${dbPath}`);
   return db;
 }
@@ -370,7 +374,7 @@ async function initDb2(_config = {}) {
   });
   try {
     await sql.unsafe(
-      "ALTER TABLE users ADD COLUMN IF NOT EXISTS pos_categories TEXT; ALTER TABLE users ADD COLUMN IF NOT EXISTS pos_tickets INTEGER NOT NULL DEFAULT 1; ALTER TABLE users ADD COLUMN IF NOT EXISTS owner_id INTEGER; ALTER TABLE events ADD COLUMN IF NOT EXISTS owner_id INTEGER;"
+      "ALTER TABLE users ADD COLUMN IF NOT EXISTS pos_categories TEXT; ALTER TABLE users ADD COLUMN IF NOT EXISTS pos_tickets INTEGER NOT NULL DEFAULT 1; ALTER TABLE users ADD COLUMN IF NOT EXISTS owner_id INTEGER; ALTER TABLE users ADD COLUMN IF NOT EXISTS pos_box_id INTEGER; ALTER TABLE events ADD COLUMN IF NOT EXISTS owner_id INTEGER; ALTER TABLE boxes ADD COLUMN IF NOT EXISTS pos_categories TEXT; ALTER TABLE boxes ADD COLUMN IF NOT EXISTS pos_tickets INTEGER NOT NULL DEFAULT 1;"
     );
   } catch {
   }
@@ -691,7 +695,7 @@ async function createSession(user, device) {
 async function validateSession(token) {
   if (!token) return null;
   const row = await getRow3(
-    `SELECT u.id, u.username, u.name, u.role, u.active, u.created_at, u.last_login_at, u.pos_categories, u.pos_tickets, u.owner_id
+    `SELECT u.id, u.username, u.name, u.role, u.active, u.created_at, u.last_login_at, u.pos_categories, u.pos_tickets, u.pos_box_id, u.owner_id
      FROM sessions s JOIN users u ON u.id = s.user_id
      WHERE s.token = ? AND s.expires_at > ?`,
     token,
@@ -712,7 +716,7 @@ async function listUsers(actor) {
     params.push("cajero", actor.id);
   }
   return allRows3(
-    `SELECT id, username, name, role, active, pos_categories, pos_tickets, owner_id, created_at, last_login_at
+    `SELECT id, username, name, role, active, pos_categories, pos_tickets, pos_box_id, owner_id, created_at, last_login_at
      FROM users ${filter} ORDER BY CASE role WHEN 'superadmin' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, name`,
     ...params
   );
@@ -750,13 +754,14 @@ async function createUser(input, actor) {
     pwd = hashPassword(input.password);
   }
   const res = await exec3(
-    "INSERT INTO users (username, password_hash, role, name, pos_categories, pos_tickets, owner_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO users (username, password_hash, role, name, pos_categories, pos_tickets, pos_box_id, owner_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
     usernameNorm,
     pwd,
     role,
     name.trim() || usernameNorm,
     role === "cajero" ? input.pos_categories ?? null : null,
     role === "cajero" ? input.pos_tickets ?? 1 : 1,
+    role === "cajero" ? input.pos_box_id ?? null : null,
     ownerId
   );
   return res.lastInsertRowid;
@@ -782,6 +787,7 @@ async function updateUser(id, input, actor) {
   }
   if (input.pos_categories !== void 0) await exec3("UPDATE users SET pos_categories = ? WHERE id = ?", input.pos_categories, id);
   if (input.pos_tickets !== void 0) await exec3("UPDATE users SET pos_tickets = ? WHERE id = ?", input.pos_tickets ? 1 : 0, id);
+  if (input.pos_box_id !== void 0) await exec3("UPDATE users SET pos_box_id = ? WHERE id = ?", input.pos_box_id, id);
   if (input.owner_id !== void 0 && actor.role === "superadmin" && target.role === "cajero") {
     const ownerId = input.owner_id ?? null;
     if (ownerId !== null) {
@@ -1498,10 +1504,16 @@ async function listBoxes(eventId) {
 async function getBox(id) {
   return getRow3("SELECT * FROM boxes WHERE id = ?", id);
 }
-async function createBox(eventId, name, userId) {
-  const n = name.trim();
+async function createBox(eventId, input, userId) {
+  const n = input.name.trim();
   if (!n) throw BadRequest("El nombre de la caja es obligatorio");
-  const res = await exec3("INSERT INTO boxes (event_id, name) VALUES (?, ?)", eventId, n);
+  const res = await exec3(
+    "INSERT INTO boxes (event_id, name, pos_categories, pos_tickets) VALUES (?, ?, ?, ?)",
+    eventId,
+    n,
+    input.pos_categories ?? null,
+    input.pos_tickets === void 0 ? 1 : input.pos_tickets ? 1 : 0
+  );
   await audit(userId, "create", "box", res.lastInsertRowid, { event_id: eventId, name: n });
   return getBox(res.lastInsertRowid);
 }
@@ -1509,9 +1521,11 @@ async function updateBox(id, input, userId) {
   const cur = await getBox(id);
   if (!cur) throw BadRequest("Caja no encontrada");
   await exec3(
-    "UPDATE boxes SET name = ?, active = ? WHERE id = ?",
+    "UPDATE boxes SET name = ?, active = ?, pos_categories = ?, pos_tickets = ? WHERE id = ?",
     input.name?.trim() ?? cur.name,
     input.active === void 0 ? cur.active : input.active ? 1 : 0,
+    input.pos_categories === void 0 ? cur.pos_categories ?? null : input.pos_categories,
+    input.pos_tickets === void 0 ? cur.pos_tickets ?? 1 : input.pos_tickets ? 1 : 0,
     id
   );
   await audit(userId, "update", "box", id, {});
@@ -1583,12 +1597,12 @@ var init_data_routes = __esm({
     }));
     router2.post("/users", requireRole("superadmin", "admin"), async (req, res, next) => {
       try {
-        const { username, name, role, password, pin, pos_categories, pos_tickets, owner_id } = req.body;
+        const { username, name, role, password, pin, pos_categories, pos_tickets, pos_box_id, owner_id } = req.body;
         if (req.user.role !== "superadmin" && role !== "cajero") {
           res.status(403).json({ error: "Solo el superadministrador puede crear administradores", code: "FORBIDDEN" });
           return;
         }
-        const id = await createUser({ username, name, role, password, pin, pos_categories, pos_tickets, owner_id }, req.user);
+        const id = await createUser({ username, name, role, password, pin, pos_categories, pos_tickets, pos_box_id, owner_id }, req.user);
         res.json({ id });
       } catch (e) {
         next(e);
@@ -1779,7 +1793,16 @@ var init_data_routes = __esm({
     router2.post("/events/:eventId/boxes", requireRole("superadmin", "admin"), async (req, res, next) => {
       try {
         await gateEvent(req, parseNumber(req.params.eventId));
-        res.json(await createBox(parseNumber(req.params.eventId), req.body.name ?? "", req.user.id));
+        const { name, pos_categories, pos_tickets } = req.body;
+        res.json(await createBox(parseNumber(req.params.eventId), { name, pos_categories, pos_tickets }, req.user.id));
+      } catch (e) {
+        next(e);
+      }
+    });
+    router2.get("/boxes/:id", async (req, res, next) => {
+      try {
+        await gateEntity(req, parseNumber(req.params.id), getBox);
+        res.json(await getBox(parseNumber(req.params.id)));
       } catch (e) {
         next(e);
       }

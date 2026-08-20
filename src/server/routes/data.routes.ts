@@ -29,12 +29,12 @@ router.get('/users', requireRole('superadmin', 'admin'), asyncHandler(async (req
 
 router.post('/users', requireRole('superadmin', 'admin'), async (req: AuthedRequest, res, next) => {
   try {
-    const { username, name, role, password, pin, pos_categories, pos_tickets, owner_id } = req.body;
+    const { username, name, role, password, pin, pos_categories, pos_tickets, pos_box_id, owner_id } = req.body;
     if (req.user!.role !== 'superadmin' && role !== 'cajero') {
       res.status(403).json({ error: 'Solo el superadministrador puede crear administradores', code: 'FORBIDDEN' });
       return;
     }
-    const id = await usersSvc.createUser({ username, name, role, password, pin, pos_categories, pos_tickets, owner_id }, req.user!);
+    const id = await usersSvc.createUser({ username, name, role, password, pin, pos_categories, pos_tickets, pos_box_id, owner_id }, req.user!);
     res.json({ id });
   } catch (e) {
     next(e);
@@ -253,7 +253,17 @@ router.get('/events/:eventId/boxes', async (req: AuthedRequest, res, next) => {
 router.post('/events/:eventId/boxes', requireRole('superadmin', 'admin'), async (req: AuthedRequest, res, next) => {
   try {
     await gateEvent(req, parseNumber(req.params.eventId));
-    res.json(await boxesSvc.createBox(parseNumber(req.params.eventId), req.body.name ?? '', req.user!.id));
+    const { name, pos_categories, pos_tickets } = req.body;
+    res.json(await boxesSvc.createBox(parseNumber(req.params.eventId), { name, pos_categories, pos_tickets }, req.user!.id));
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.get('/boxes/:id', async (req: AuthedRequest, res, next) => {
+  try {
+    await gateEntity(req, parseNumber(req.params.id), boxesSvc.getBox);
+    res.json(await boxesSvc.getBox(parseNumber(req.params.id)));
   } catch (e) {
     next(e);
   }
