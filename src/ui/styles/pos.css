@@ -316,7 +316,10 @@
     width: 100%;
     border-left: none;
     border-top: 1px solid var(--border);
-    max-height: 50vh;
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+    padding-bottom: 262px;
   }
   .pos-cart-items {
     flex: 1 1 auto;
@@ -324,7 +327,15 @@
     max-height: none;
   }
   .pos-cart-total {
-    flex-shrink: 0;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 5;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    padding: 10px 16px 12px;
+    box-shadow: 0 -4px 14px rgba(0, 0, 0, 0.08);
   }
   .pos-payments {
     grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
