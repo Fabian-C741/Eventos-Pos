@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
 import { api } from '../api/client';
+import { useAuth } from './AuthContext';
 import type { Event, Category, Product, TicketType, Box } from '../../shared/types';
 
 interface DataState {
@@ -66,6 +67,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     refreshEvents().finally(() => setLoading(false));
   }, [refreshEvents]);
+
+  const { user } = useAuth();
+  useEffect(() => {
+    if (user) refreshEvents();
+  }, [user?.id, user?.role, refreshEvents]);
 
   useEffect(() => {
     refreshEventData();
