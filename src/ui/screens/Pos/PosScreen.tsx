@@ -21,7 +21,13 @@ export function PosScreen() {
   const { push } = useToast();
   const navigate = useNavigate();
 
-  const [selectedCat, setSelectedCat] = useState<number | 'tickets' | 'all'>('all');
+  const [selectedCat, setSelectedCat] = useState<number | 'tickets' | 'all'>(() => {
+    const cats = user?.pos_categories == null ? null : user.pos_categories.split(',').map(Number).filter(Boolean);
+    const unlimited = cats === null;
+    const tickets = user?.pos_tickets !== 0;
+    if (tickets && !unlimited && (cats?.length ?? 0) === 0) return 'tickets';
+    return 'all';
+  });
   const [items, setItems] = useState<CartItem[]>([]);
   const [tickets, setTickets] = useState<CartTicket[]>([]);
   const [boxId, setBoxIdState] = useState<number | null>(() => {
@@ -51,6 +57,8 @@ export function PosScreen() {
     const cats = user?.pos_categories == null ? null : user.pos_categories.split(',').map(Number).filter(Boolean);
     return { unlimited: cats === null, cats, tickets: user?.pos_tickets !== 0 };
   }, [user?.pos_categories, user?.pos_tickets]);
+  const canSellProducts = useMemo(() => pos.unlimited || (pos.cats?.length ?? 0) > 0, [pos]);
+  const ticketsOnly = pos.tickets && !canSellProducts;
   const activeCategories = useMemo(
     () => categories.filter((c) => c.active === 1 && (pos.unlimited || pos.cats!.includes(c.id))),
     [categories, pos],
@@ -72,9 +80,13 @@ export function PosScreen() {
   const activeTickets = useMemo(() => (pos.tickets ? ticketTypes.filter((t) => t.active === 1) : []), [ticketTypes, pos.tickets]);
 
   useEffect(() => {
+    if (ticketsOnly) {
+      setSelectedCat('tickets');
+      return;
+    }
     if (selectedCat === 'tickets' && !pos.tickets) setSelectedCat('all');
     else if (typeof selectedCat === 'number' && !pos.unlimited && !pos.cats!.includes(selectedCat)) setSelectedCat('all');
-  }, [selectedCat, pos]);
+  }, [selectedCat, pos, ticketsOnly]);
 
   const cartTotal = useMemo(
     () => items.reduce((s, i) => s + i.unit_price * i.quantity, 0) + tickets.reduce((s, t) => s + t.unit_price * t.quantity, 0),
@@ -331,21 +343,24 @@ export function PosScreen() {
                   🎟️ Entradas
                 </button>
               )}
-              <button
-                className={`pos-category-tab ${selectedCat === 'all' ? 'active' : ''}`}
-                onClick={() => setSelectedCat('all')}
-              >
-                📦 Todos
-              </button>
-              {activeCategories.map((c) => (
+              {canSellProducts && (
                 <button
-                  key={c.id}
-                  className={`pos-category-tab ${selectedCat === c.id ? 'active' : ''}`}
-                  onClick={() => setSelectedCat(c.id)}
+                  className={`pos-category-tab ${selectedCat === 'all' ? 'active' : ''}`}
+                  onClick={() => setSelectedCat('all')}
                 >
-                  {c.icon} {c.name}
+                  📦 Todos
                 </button>
-              ))}
+              )}
+              {canSellProducts &&
+                activeCategories.map((c) => (
+                  <button
+                    key={c.id}
+                    className={`pos-category-tab ${selectedCat === c.id ? 'active' : ''}`}
+                    onClick={() => setSelectedCat(c.id)}
+                  >
+                    {c.icon} {c.name}
+                  </button>
+                ))}
             </div>
           </div>
 
