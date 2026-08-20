@@ -203,6 +203,7 @@ export interface AppSettings {
   currency_symbol: string;
   receipt_footer: string;
   login_logo: string;
+  payment_tarjeta: string;
 }
 
 export interface DashboardData {

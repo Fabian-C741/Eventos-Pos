@@ -11,6 +11,7 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   currency_symbol: '$',
   receipt_footer: '',
   login_logo: '',
+  payment_tarjeta: '0',
 };
 
 export async function getSetting(key: string): Promise<string> {
@@ -33,6 +34,7 @@ export async function getSettings(): Promise<AppSettings> {
     currency_symbol: await getSetting('currency_symbol'),
     receipt_footer: await getSetting('receipt_footer'),
     login_logo: await getSetting('login_logo'),
+    payment_tarjeta: await getSetting('payment_tarjeta'),
   };
 }
 

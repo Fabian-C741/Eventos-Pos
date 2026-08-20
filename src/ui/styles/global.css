@@ -92,6 +92,7 @@ h4 {
 .app-shell {
   display: flex;
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
 }
 
@@ -247,6 +248,7 @@ h4 {
   }
   .main {
     height: 100vh;
+    height: 100dvh;
   }
   .content {
     padding: 14px;

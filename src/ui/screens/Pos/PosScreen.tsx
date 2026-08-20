@@ -49,6 +49,7 @@ export function PosScreen() {
   const [myReportOpen, setMyReportOpen] = useState(false);
   const [mySales, setMySales] = useState<Sale[]>([]);
   const [myTotals, setMyTotals] = useState({ ventas: 0, efectivo: 0, transferencia: 0, tarjeta: 0, otro: 0, total: 0 });
+  const [cardEnabled, setCardEnabled] = useState(false);
 
   const saleSound = useRef<AudioContext | null>(null);
 
@@ -77,6 +78,10 @@ export function PosScreen() {
     [products, selectedCat, pos],
   );
   const activeTickets = useMemo(() => (pos.tickets ? ticketTypes.filter((t) => t.active === 1) : []), [ticketTypes, pos.tickets]);
+  const visiblePayments = useMemo(() => {
+    const base = PAYMENT_METHODS.filter((m) => m.key !== 'otro');
+    return cardEnabled ? base : base.filter((m) => m.key !== 'tarjeta');
+  }, [cardEnabled]);
 
   useEffect(() => {
     if (ticketsOnly) {
@@ -101,6 +106,10 @@ export function PosScreen() {
         timeOffset.current = r.epoch - Date.now();
         setClock(new Date(Date.now() + timeOffset.current));
       })
+      .catch(() => {});
+    api
+      .get<{ tarjeta: boolean }>('/auth/pos-config')
+      .then((r) => setCardEnabled(!!r.tarjeta))
       .catch(() => {});
   }, []);
 
@@ -466,7 +475,7 @@ export function PosScreen() {
             <div className="pos-total-label">Total</div>
             <div className="pos-total-amount">{formatMoney(cartTotal)}</div>
             <div className="pos-payments">
-              {PAYMENT_METHODS.map((m) => (
+              {visiblePayments.map((m) => (
                 <button
                   key={m.key}
                   className="pos-pay-btn"
@@ -530,7 +539,7 @@ export function PosScreen() {
                 {formatMoney(ticketType.price * ticketQty)}
               </div>
               <div className="ticket-pay">
-                {PAYMENT_METHODS.map((m) => (
+                {visiblePayments.map((m) => (
                   <button key={m.key} className="pos-pay-btn" style={{ background: m.color }} onClick={() => registerTicketSale(m.key)}>
                     {m.icon} {m.label}
                   </button>

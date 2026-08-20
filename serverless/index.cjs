@@ -951,7 +951,8 @@ async function getSettings() {
     device_name: await getSetting("device_name"),
     currency_symbol: await getSetting("currency_symbol"),
     receipt_footer: await getSetting("receipt_footer"),
-    login_logo: await getSetting("login_logo")
+    login_logo: await getSetting("login_logo"),
+    payment_tarjeta: await getSetting("payment_tarjeta")
   };
 }
 async function setSetting(key, value, userId) {
@@ -1044,7 +1045,8 @@ var init_settings_service = __esm({
       device_name: "Caja central",
       currency_symbol: "$",
       receipt_footer: "",
-      login_logo: ""
+      login_logo: "",
+      payment_tarjeta: "0"
     };
     lastLogPrune = 0;
   }
@@ -1066,6 +1068,9 @@ var init_auth_routes = __esm({
     router = (0, import_express.Router)();
     router.get("/login-config", asyncHandler(async (_req, res) => {
       res.json({ app_name: await getSetting("app_name"), login_logo: await getSetting("login_logo") });
+    }));
+    router.get("/pos-config", requireAuth, asyncHandler(async (_req, res) => {
+      res.json({ tarjeta: await getSetting("payment_tarjeta") === "1" });
     }));
     router.get("/status", asyncHandler(async (_req, res) => {
       res.json({ setup: await needsSetup() });

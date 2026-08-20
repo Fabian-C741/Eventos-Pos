@@ -21,6 +21,10 @@ router.get('/login-config', asyncHandler(async (_req, res) => {
   res.json({ app_name: await getSetting('app_name'), login_logo: await getSetting('login_logo') });
 }));
 
+router.get('/pos-config', requireAuth, asyncHandler(async (_req, res) => {
+  res.json({ tarjeta: (await getSetting('payment_tarjeta')) === '1' });
+}));
+
 router.get('/status', asyncHandler(async (_req, res) => {
   res.json({ setup: await needsSetup() });
 }));

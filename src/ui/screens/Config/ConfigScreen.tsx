@@ -8,18 +8,27 @@ interface AppSettings {
   currency_symbol: string;
   receipt_footer: string;
   login_logo: string;
+  payment_tarjeta: string;
 }
 
 export function ConfigScreen() {
   const { push } = useToast();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState<AppSettings>({ app_name: '', currency_symbol: '$', receipt_footer: '', login_logo: '' });
+  const [form, setForm] = useState<AppSettings>({ app_name: '', currency_symbol: '$', receipt_footer: '', login_logo: '', payment_tarjeta: '0' });
 
   useEffect(() => {
     api
       .get<Partial<AppSettings>>('/settings')
-      .then((s) => setForm({ app_name: s.app_name ?? '', currency_symbol: s.currency_symbol ?? '$', receipt_footer: s.receipt_footer ?? '', login_logo: s.login_logo ?? '' }))
+      .then((s) =>
+        setForm({
+          app_name: s.app_name ?? '',
+          currency_symbol: s.currency_symbol ?? '$',
+          receipt_footer: s.receipt_footer ?? '',
+          login_logo: s.login_logo ?? '',
+          payment_tarjeta: s.payment_tarjeta ?? '0',
+        }),
+      )
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
@@ -32,6 +41,7 @@ export function ConfigScreen() {
         currency_symbol: form.currency_symbol.trim() || '$',
         receipt_footer: form.receipt_footer.trim(),
         login_logo: form.login_logo.trim(),
+        payment_tarjeta: form.payment_tarjeta,
       });
       push('success', 'Configuración guardada');
     } catch (e) {
@@ -67,6 +77,15 @@ export function ConfigScreen() {
             <input className="input" value={form.login_logo} onChange={(e) => setForm({ ...form, login_logo: e.target.value })} placeholder="Ej: 🎪 o https://tusitio.com/logo.png" />
             <span style={{ fontSize: 12, color: 'var(--muted)' }}>Aparece arriba del nombre del sistema en la pantalla de acceso.</span>
           </label>
+          <label className="row" style={{ cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={form.payment_tarjeta === '1'}
+              onChange={(e) => setForm({ ...form, payment_tarjeta: e.target.checked ? '1' : '0' })}
+            />
+            <span style={{ fontWeight: 700 }}>Permitir pago con tarjeta en el POS</span>
+          </label>
+          <span style={{ fontSize: 12, color: 'var(--muted)' }}>Por defecto el cajero solo ve Efectivo y Transferencia. Activá esta opción para mostrar también Tarjeta.</span>
         </div>
 
         <div className="row mt-16" style={{ justifyContent: 'flex-end' }}>
