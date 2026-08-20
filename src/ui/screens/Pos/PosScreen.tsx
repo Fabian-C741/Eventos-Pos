@@ -30,6 +30,7 @@ export function PosScreen() {
   });
   const [items, setItems] = useState<CartItem[]>([]);
   const [tickets, setTickets] = useState<CartTicket[]>([]);
+  const [showCartLines, setShowCartLines] = useState(false);
   const [boxId, setBoxIdState] = useState<number | null>(() => {
     const raw = localStorage.getItem('epos_box');
     const n = raw ? Number(raw) : NaN;
@@ -225,6 +226,7 @@ export function PosScreen() {
     setPendingSale({ op, total: cartTotal, method: PAYMENT_LABELS[method] || method, offline });
     setItems([]);
     setTickets([]);
+    setShowCartLines(false);
   };
 
   const registerTicketSale = async (method: string) => {
@@ -417,11 +419,18 @@ export function PosScreen() {
         <div className="pos-cart">
           <div className="pos-cart-title">
             <span>VENTA ACTUAL</span>
-            <span className="muted" style={{ fontSize: 12 }}>
-              {items.length + tickets.length} línea(s)
-            </span>
+            <div className="pos-cart-title-actions">
+              <span className="muted" style={{ fontSize: 12 }}>
+                {items.length + tickets.length} línea(s)
+              </span>
+              {items.length + tickets.length > 0 && (
+                <button className="view-lines-btn" onClick={() => setShowCartLines((v) => !v)}>
+                  {showCartLines ? '▴ Ocultar' : '▾ Ver'}
+                </button>
+              )}
+            </div>
           </div>
-          <div className="pos-cart-items">
+          <div className={`pos-cart-items${showCartLines ? ' open' : ''}`}>
             {items.map((i) => (
               <div className="cart-item" key={`p${i.product_id}`}>
                 <div className="ci-icon">{i.icon}</div>
@@ -492,6 +501,7 @@ export function PosScreen() {
               onClick={() => {
                 setItems([]);
                 setTickets([]);
+                setShowCartLines(false);
               }}
             >
               🧹 Vaciar carrito
