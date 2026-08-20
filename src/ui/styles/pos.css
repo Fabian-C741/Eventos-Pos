@@ -2,6 +2,7 @@
 .pos-screen {
   height: 100vh;
   height: 100dvh;
+  height: 100svh;
   display: flex;
   flex-direction: column;
   background: var(--bg);
@@ -312,14 +313,17 @@
   .pos-body {
     flex-direction: column;
   }
+  .pos-products {
+    flex: 1 1 0;
+    min-height: 0;
+  }
   .pos-cart {
     width: 100%;
     border-left: none;
     border-top: 1px solid var(--border);
-    flex: 1 1 auto;
+    flex: 0 1 auto;
     min-height: 0;
-    max-height: none;
-    padding-bottom: 262px;
+    max-height: 50svh;
   }
   .pos-cart-items {
     flex: 1 1 auto;
@@ -327,15 +331,7 @@
     max-height: none;
   }
   .pos-cart-total {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    z-index: 5;
-    background: var(--surface);
-    border-top: 1px solid var(--border);
-    padding: 10px 16px 12px;
-    box-shadow: 0 -4px 14px rgba(0, 0, 0, 0.08);
+    flex-shrink: 0;
   }
   .pos-payments {
     grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));

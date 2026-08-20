@@ -93,6 +93,7 @@ h4 {
   display: flex;
   height: 100vh;
   height: 100dvh;
+  height: 100svh;
   overflow: hidden;
 }
 
@@ -249,6 +250,7 @@ h4 {
   .main {
     height: 100vh;
     height: 100dvh;
+    height: 100svh;
   }
   .content {
     padding: 14px;
@@ -895,6 +897,7 @@ table.table {
 /* ---------- Login ---------- */
 .login-screen {
   height: 100vh;
+  height: 100svh;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1072,6 +1075,7 @@ table.table {
 /* ---------- Error boundary ---------- */
 .error-screen {
   height: 100vh;
+  height: 100svh;
   display: flex;
   align-items: center;
   justify-content: center;
