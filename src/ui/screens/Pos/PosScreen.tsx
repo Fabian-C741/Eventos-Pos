@@ -31,6 +31,11 @@ export function PosScreen() {
   const [items, setItems] = useState<CartItem[]>([]);
   const [tickets, setTickets] = useState<CartTicket[]>([]);
   const [showCartLines, setShowCartLines] = useState(false);
+  useEffect(() => {
+    if (items.length + tickets.length === 0) {
+      setShowCartLines(false);
+    }
+  }, [items.length, tickets.length]);
   const [boxId, setBoxIdState] = useState<number | null>(() => {
     const raw = localStorage.getItem('epos_box');
     const n = raw ? Number(raw) : NaN;
