@@ -1,4 +1,4 @@
-import { ReactNode, useEffect } from 'react';
+import { ReactNode, useEffect, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
@@ -33,6 +33,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { activeEvent } = useData();
   const { app_name, login_logo } = useAppBrand();
   const navigate = useNavigate();
+  const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     document.title = (app_name || 'Eventos POS') + (activeEvent ? ` · ${activeEvent.name}` : '');
@@ -52,6 +53,12 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
 
   const initials = (user?.name || user?.username || '?').slice(0, 2).toUpperCase();
+
+  const handleLogout = () => {
+    const p = user?.role === 'cajero' ? '/cajero' : user?.role === 'admin' ? '/admin' : '/login';
+    setMenuOpen(false);
+    logout().then(() => navigate(p));
+  };
 
   const renderNav = (vertical: boolean) => (
     <>
@@ -105,7 +112,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             className="icon-btn"
             title="Salir"
             style={{ background: 'transparent', border: '1px solid #334155', color: '#fff' }}
-            onClick={() => { const p = user?.role === 'cajero' ? '/cajero' : user?.role === 'admin' ? '/admin' : '/login'; logout().then(() => navigate(p)); }}
+            onClick={handleLogout}
           >
             ⎋
           </button>
@@ -114,6 +121,9 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       <div className="main">
         <div className="topbar">
+          <button className="hamburger" onClick={() => setMenuOpen(true)} aria-label="Abrir menú">
+            ☰
+          </button>
           <span className="page-title">{activeEvent ? activeEvent.name : 'Sin evento seleccionado'}</span>
           <span className="topbar-spacer" />
           <button className="btn btn-ghost btn-sm" onClick={() => navigate('/cajero')}>
@@ -123,7 +133,49 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="content">{children}</div>
       </div>
 
-      <nav className="bottom-nav">{renderNav(false)}</nav>
+      {menuOpen && (
+        <div className="mobile-menu-overlay" onClick={() => setMenuOpen(false)}>
+          <div className="mobile-menu" onClick={(e) => e.stopPropagation()}>
+            <div className="mobile-menu-header">
+              <div className="sidebar-brand">
+                {login_logo ? (
+                  /^(https?:|data:image|\/)/i.test(login_logo) ? (
+                    <img className="sidebar-logo-img" src={login_logo} alt="" />
+                  ) : (
+                    <span className="logo" style={{ fontSize: 16 }}>{login_logo}</span>
+                  )
+                ) : (
+                  <span className="logo">🎪</span>
+                )}
+                <span>{app_name || 'Eventos POS'}</span>
+              </div>
+              <button className="icon-btn mobile-menu-close" onClick={() => setMenuOpen(false)} aria-label="Cerrar menú">
+                ✕
+              </button>
+            </div>
+            <nav className="sidebar-nav">{renderNav(true)}</nav>
+            <div className="sidebar-user">
+              <div className="avatar">{initials}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 800, fontSize: 13.5, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {user?.name}
+                </div>
+                <div style={{ fontSize: 11.5, color: 'var(--sidebar-text)' }}>
+                  {user?.role === 'superadmin' ? 'Superadministrador' : user?.role === 'admin' ? 'Administrador' : 'Cajero'}
+                </div>
+              </div>
+              <button
+                className="icon-btn"
+                title="Salir"
+                style={{ background: 'transparent', border: '1px solid #334155', color: '#fff' }}
+                onClick={handleLogout}
+              >
+                ⎋
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

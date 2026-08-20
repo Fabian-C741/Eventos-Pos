@@ -315,10 +315,15 @@
     width: 100%;
     border-left: none;
     border-top: 1px solid var(--border);
-    max-height: 46vh;
+    max-height: 50vh;
   }
   .pos-cart-items {
-    max-height: 22vh;
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+  }
+  .pos-cart-total {
+    flex-shrink: 0;
   }
   .pos-payments {
     grid-template-columns: repeat(4, 1fr);
@@ -328,6 +333,16 @@
 @media (max-width: 640px) {
   .pos-payments {
     grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .pos-payments {
+    gap: 6px;
+  }
+  .pos-pay-btn {
+    min-height: 52px;
+    font-size: 14px;
   }
 }
 
