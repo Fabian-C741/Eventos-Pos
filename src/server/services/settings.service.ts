@@ -41,7 +41,8 @@ export async function getSettings(): Promise<AppSettings> {
 export async function setSetting(key: string, value: string, userId: number) {
   const allowed = Object.keys(DEFAULT_SETTINGS);
   if (!allowed.includes(key)) throw BadRequest('Configuración no válida');
-  await exec('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', key, String(value).slice(0, 200));
+  const maxLen = key === 'login_logo' ? 100000 : 200;
+  await exec('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', key, String(value).slice(0, maxLen));
   await audit(userId, 'update', 'settings', null, { key });
   return true;
 }
