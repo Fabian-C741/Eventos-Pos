@@ -964,7 +964,8 @@ async function getSettings() {
 async function setSetting(key, value, userId) {
   const allowed = Object.keys(DEFAULT_SETTINGS);
   if (!allowed.includes(key)) throw BadRequest("Configuraci\xF3n no v\xE1lida");
-  await exec3("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", key, String(value).slice(0, 200));
+  const maxLen = key === "login_logo" ? 1e5 : 200;
+  await exec3("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", key, String(value).slice(0, maxLen));
   await audit(userId, "update", "settings", null, { key });
   return true;
 }
