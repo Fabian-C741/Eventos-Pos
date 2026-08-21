@@ -1,0 +1,24 @@
+Eventos POS — Sistema de gestión de eventos, ventas y recaudación
+
+Copyright (c) 2025-2026 Fabian. Todos los derechos reservados.
+
+Este código fuente y todos sus componentes (frontend, backend, base de datos,
+documentación, tests y assets) son propiedad exclusiva de su autor.
+
+QUEDA PROHIBIDO:
+- Copiar, distribuir o divulgar total o parcialmente este código.
+- Modificar, adaptar o crear trabajos derivados.
+- Revender, alquilar o sublicensear este software.
+- Usar este código para competir directa o indirectamente con el autor.
+
+Excepciones:
+- Se permite la instalación y uso del sistema según los términos acordados
+  con el autor para cada cliente o部署 (deploy).
+- Se permite la lectura del código únicamente para fines de auditoría de
+  seguridad, previa autorización escrita del autor.
+
+Este software se distribuye "TAL CUAL", SIN GARANTÍA de ningún tipo, expresa
+o implícita, incluyendo pero no limitado a garantías de comercialización,
+idoneidad para un fin particular e infracción de derechos.
+
+Contacto: consultas sobre licencias y uso → Fabian (autor del sistema).
