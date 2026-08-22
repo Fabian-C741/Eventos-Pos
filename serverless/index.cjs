@@ -351,7 +351,7 @@ async function initDb2(_config = {}) {
   if (!rawUrl) throw new Error("DATABASE_URL no definida para el modo nube");
   const url = sanitizePgUrl(rawUrl);
   sql = postgresFactory(url, {
-    max: 1,
+    max: 5,
     ssl: { rejectUnauthorized: false },
     connection: {
       application_name: "eventos-pos",
@@ -3192,6 +3192,55 @@ var init_system_routes = __esm({
   }
 });
 
+// src/server/rateLimit.ts
+function getClientIp(req) {
+  const fwd = req.headers["x-forwarded-for"];
+  if (typeof fwd === "string") return fwd.split(",")[0].trim();
+  return req.ip || req.socket.remoteAddress || "unknown";
+}
+function createLimiter(windowMs, max) {
+  const buckets = /* @__PURE__ */ new Map();
+  const timer = setInterval(() => {
+    const now = Date.now();
+    for (const [key, b] of buckets) {
+      if (now >= b.resetAt) buckets.delete(key);
+    }
+  }, Math.max(windowMs, 6e4));
+  if (timer.unref) timer.unref();
+  if (!process.env.DATABASE_URL || process.env.NODE_ENV === "test") {
+    return (_req, _res, next) => next();
+  }
+  return (req, res, next) => {
+    const ip = getClientIp(req);
+    const now = Date.now();
+    let bucket = buckets.get(ip);
+    if (!bucket || now >= bucket.resetAt) {
+      bucket = { count: 0, resetAt: now + windowMs };
+      buckets.set(ip, bucket);
+    }
+    bucket.count++;
+    res.setHeader("X-RateLimit-Limit", max);
+    res.setHeader("X-RateLimit-Remaining", Math.max(0, max - bucket.count));
+    res.setHeader("X-RateLimit-Reset", Math.ceil(bucket.resetAt / 1e3));
+    if (bucket.count > max) {
+      const retryAfter = Math.ceil((bucket.resetAt - now) / 1e3);
+      res.setHeader("Retry-After", retryAfter);
+      res.status(429).json({ error: "Demasiadas solicitudes. Esper\xE1 e intent\xE1 de nuevo.", code: "RATE_LIMIT" });
+      return;
+    }
+    next();
+  };
+}
+var rateLimitGeneral, rateLimitAuth, rateLimitSales;
+var init_rateLimit = __esm({
+  "src/server/rateLimit.ts"() {
+    "use strict";
+    rateLimitGeneral = createLimiter(6e4, 100);
+    rateLimitAuth = createLimiter(6e4, 10);
+    rateLimitSales = createLimiter(6e4, 30);
+  }
+});
+
 // src/server/app.ts
 var app_exports = {};
 __export(app_exports, {
@@ -3216,12 +3265,12 @@ function createApp() {
     );
     next();
   });
-  app2.use("/api/auth", auth_routes_default);
-  app2.use("/api", data_routes_default);
-  app2.use("/api/sales", sales_routes_default);
-  app2.use("/api/closes", closes_routes_default);
-  app2.use("/api", dashboard_routes_default);
-  app2.use("/api", system_routes_default);
+  app2.use("/api/auth", rateLimitAuth, auth_routes_default);
+  app2.use("/api", rateLimitGeneral, data_routes_default);
+  app2.use("/api/sales", rateLimitSales, sales_routes_default);
+  app2.use("/api/closes", rateLimitGeneral, closes_routes_default);
+  app2.use("/api", rateLimitGeneral, dashboard_routes_default);
+  app2.use("/api", rateLimitGeneral, system_routes_default);
   const publicDir = [import_path5.default.join(process.cwd(), "dist", "public"), import_path5.default.join(process.cwd(), "public")].find((p) => (0, import_fs5.existsSync)(p));
   if (publicDir) {
     app2.use(import_express7.default.static(publicDir));
@@ -3267,6 +3316,7 @@ var init_app = __esm({
     init_auth();
     init_logger();
     init_db();
+    init_rateLimit();
   }
 });
 

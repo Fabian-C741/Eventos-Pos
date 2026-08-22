@@ -91,7 +91,7 @@ export async function initDb(_config: DbConfig = {}) {
   if (!rawUrl) throw new Error('DATABASE_URL no definida para el modo nube');
   const url = sanitizePgUrl(rawUrl);
   sql = postgresFactory(url, {
-    max: 1,
+    max: 5,
     ssl: { rejectUnauthorized: false },
     connection: {
       application_name: 'eventos-pos',

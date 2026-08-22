@@ -10,6 +10,7 @@ import systemRoutes from './routes/system.routes';
 import { errorHandler } from './auth';
 import { logger } from './logger';
 import { insertAppLog } from './db/db';
+import { rateLimitGeneral, rateLimitAuth, rateLimitSales } from './rateLimit';
 
 export function createApp() {
   const app = express();
@@ -33,12 +34,12 @@ export function createApp() {
     next();
   });
 
-  app.use('/api/auth', authRoutes);
-  app.use('/api', dataRoutes);
-  app.use('/api/sales', salesRoutes);
-  app.use('/api/closes', closesRoutes);
-  app.use('/api', dashboardRoutes);
-  app.use('/api', systemRoutes);
+  app.use('/api/auth', rateLimitAuth, authRoutes);
+  app.use('/api', rateLimitGeneral, dataRoutes);
+  app.use('/api/sales', rateLimitSales, salesRoutes);
+  app.use('/api/closes', rateLimitGeneral, closesRoutes);
+  app.use('/api', rateLimitGeneral, dashboardRoutes);
+  app.use('/api', rateLimitGeneral, systemRoutes);
 
   const publicDir = [path.join(process.cwd(), 'dist', 'public'), path.join(process.cwd(), 'public')].find((p) => existsSync(p));
   if (publicDir) {
