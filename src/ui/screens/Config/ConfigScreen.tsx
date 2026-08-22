@@ -124,7 +124,7 @@ export function ConfigScreen() {
             {form.login_logo && (
               <div style={{ marginTop: 8 }}>
                 {/^(https?:|data:image|\/)/i.test(form.login_logo) ? (
-                  <img src={form.login_logo} alt="Logo" style={{ height: 64, borderRadius: 10, border: '1px solid var(--border)', background: '#fff' }} />
+                  <img src={form.login_logo} alt="Logo" style={{ height: 64, width: 64, objectFit: 'cover', borderRadius: '50%', border: '1px solid var(--border)', background: '#fff' }} />
                 ) : (
                   <span style={{ fontSize: 28 }}>{form.login_logo}</span>
                 )}

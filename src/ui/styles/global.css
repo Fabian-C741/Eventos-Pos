@@ -124,8 +124,8 @@ h4 {
 .sidebar-brand .sidebar-logo-img {
   width: 26px;
   height: 26px;
-  border-radius: 7px;
-  object-fit: contain;
+  border-radius: 50%;
+  object-fit: cover;
 }
 
 .sidebar-nav {
@@ -955,8 +955,8 @@ table.table {
   width: 64px;
   height: 64px;
   margin: 0 auto 14px;
-  object-fit: contain;
-  border-radius: 14px;
+  object-fit: cover;
+  border-radius: 50%;
   display: block;
 }
 
